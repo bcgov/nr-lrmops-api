@@ -18,7 +18,7 @@ Do not write an ADR for routine code changes, bug fixes, or small refactors. Use
 ## How to create an ADR
 
 1. Pick the next free number. Use four digits, starting at `0001`. Check the existing files in this folder first.
-2. Copy [template.md](template.md) to `NNNN-short-title.md`. Use lowercase words joined by hyphens. Example: `0002-use-postgres-for-audit-log.md`.
+2. Copy [template.md](template.md) to `NNNN-short-title.md`. Use lowercase words joined by hyphens. Example: `0002-use-oauth-client-credentials.md`.
 3. Fill in every section. Set **Status** to `Proposed`.
 4. Open a pull request. Ask the owning product team and any affected teams to review.
 5. When the team agrees, change **Status** to `Accepted` and merge.
@@ -48,6 +48,6 @@ Teams work in parallel, so two pull requests can pick the same number. If anothe
 
 | ADR | Title | Status | Product team |
 |---|---|---|---|
-| _No records yet_ | | | |
+| [0001](0001-api-only-no-postgres.md) | Run as an API only, without the template's frontend or Postgres | Proposed | [team or product name] |
 
 Add a row for each new ADR. Keep the table sorted by number.

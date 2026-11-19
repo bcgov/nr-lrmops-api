@@ -24,12 +24,7 @@ export async function bootstrap() {
     type: VersioningType.URI,
     prefix: 'v',
   })
-  const config = new DocumentBuilder()
-    .setTitle('Users example')
-    .setDescription('The user API description')
-    .setVersion('1.0')
-    .addTag('users')
-    .build()
+  const config = new DocumentBuilder().setTitle('LRM Ops API').setVersion('1.0').build()
 
   const document = SwaggerModule.createDocument(app, config)
   SwaggerModule.setup('/api/docs', app, document)
