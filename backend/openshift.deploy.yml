@@ -1,3 +1,7 @@
+# Backend deploy Template, consumed by `oc process` in reusable-deploy.yml.
+#
+# Every object carries the label app=${NAME}-${ZONE}: pr-close.yml and scheduled.yml remove a PR
+# environment by that label, so an object without it outlives its PR.
 apiVersion: template.openshift.io/v1
 kind: Template
 parameters:
@@ -20,23 +24,48 @@ parameters:
     description: Organization name
     value: bcgov
   - name: DOMAIN
-    value: apps.silver.devops.gov.bc.ca
+    value: apps.gold.devops.gov.bc.ca
   - name: MIN_REPLICAS
     description: The minimum amount of replicas for the horizontal pod autoscaler.
     value: "2"
   - name: MAX_REPLICAS
     description: The maximum amount of replicas for the horizontal pod autoscaler.
-    value: "5"
+    value: "3"
   - name: CPU_REQUEST
     value: "100m"
   - name: MEMORY_REQUEST
-    value: "128Mi"
+    value: "512Mi"
+  # The JVM sizes its heap as a percentage of this limit (-XX:MaxRAMPercentage=60 in the
+  # Dockerfile), so changing it changes the heap: 768Mi gives ~460MB.
   - name: MEMORY_LIMIT
     description: Memory limit for the container (bounds the pod's working set).
-    value: "4Gi"
-  - name: LOG_LEVEL
-    description: Application log level (debug|info|warn|error)
-    value: "info"
+    value: "768Mi"
+  # Container timezone: the JVM default zone, which the log pattern renders in. OpenShift
+  # containers are UTC otherwise. Resolved from the tzdb inside the JDK.
+  - name: TZ
+    value: America/Vancouver
+  - name: APP_LOG_LEVEL
+    value: INFO
+  - name: KEYCLOAK_ISSUER_URI
+    description: Keycloak realm issuer URI used to validate bearer tokens (the JWKS URI is derived from it)
+    required: true
+  # Browser origins allowed to call the API directly (CORS), comma-separated. Empty allows none.
+  - name: ALLOWED_ORIGINS
+    value: ""
+  # Oracle TFM (LRMOPS), as PROXY_FSA_LRM_READ_WRITE_USER (scripts/db/).
+  - name: DATABASE_HOST
+    required: true
+  - name: DATABASE_PORT
+    value: "1543"
+  - name: DATABASE_SERVICE_NAME
+    required: true
+  - name: DATABASE_USER
+    required: true
+  - name: DATABASE_PASSWORD
+    required: true
+  # Password of the TCPS truststore the init container builds in /cert.
+  - name: KEYSTORE_SECRET
+    required: true
 objects:
   - apiVersion: apps/v1
     kind: Deployment
@@ -60,9 +89,10 @@ objects:
             deployment: ${NAME}-${ZONE}-${COMPONENT}
           annotations:
             prometheus.io/scrape: 'true'
-            prometheus.io/port: '3000'
-            prometheus.io/path: '/api/metrics'
+            prometheus.io/port: '8080'
+            prometheus.io/path: '/actuator/prometheus'
         spec:
+          automountServiceAccountToken: false
           terminationGracePeriodSeconds: 30
           affinity:
             podAntiAffinity:
@@ -73,16 +103,80 @@ objects:
                       matchLabels:
                         deployment: ${NAME}-${ZONE}-${COMPONENT}
                     topologyKey: kubernetes.io/hostname
+          # Fetches the Oracle listener's certificate and writes the TCPS truststore to /cert
+          # (jssecacerts, protected by KEYSTORE_SECRET), which the datasource reads.
+          initContainers:
+            - name: ${NAME}-init
+              image: ghcr.io/bcgov/nr-forest-client/common:prod
+              imagePullPolicy: Always
+              env:
+                - name: ORACLEDB_HOST
+                  value: ${DATABASE_HOST}
+                - name: ORACLEDB_PORT
+                  value: ${DATABASE_PORT}
+                - name: ORACLEDB_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: KEYSTORE_SECRET
+              volumeMounts:
+                - name: api-cert
+                  mountPath: /cert
+                - name: init-tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "256Mi"
+                limits:
+                  memory: "512Mi"
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
           containers:
             - name: ${NAME}
               image: ${REGISTRY}/${ORG_NAME}/${NAME}/${COMPONENT}:${IMAGE_TAG}
               imagePullPolicy: Always
               ports:
                 - name: http
-                  containerPort: 3000
+                  containerPort: 8080
               env:
-                - name: LOG_LEVEL
-                  value: ${LOG_LEVEL}
+                - name: TZ
+                  value: ${TZ}
+                - name: SERVER_PORT
+                  value: "8080"
+                - name: APP_ZONE
+                  value: ${ZONE}
+                - name: APP_LOG_LEVEL
+                  value: ${APP_LOG_LEVEL}
+                - name: KEYCLOAK_ISSUER_URI
+                  value: ${KEYCLOAK_ISSUER_URI}
+                - name: ALLOWED_ORIGINS
+                  value: ${ALLOWED_ORIGINS}
+                - name: DATABASE_HOST
+                  value: ${DATABASE_HOST}
+                - name: DATABASE_PORT
+                  value: ${DATABASE_PORT}
+                - name: DATABASE_SERVICE_NAME
+                  value: ${DATABASE_SERVICE_NAME}
+                - name: DATABASE_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: DATABASE_USER
+                - name: DATABASE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: DATABASE_PASSWORD
+                - name: KEYSTORE_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: KEYSTORE_SECRET
               resources:
                 requests:
                   cpu: ${CPU_REQUEST}
@@ -98,36 +192,50 @@ objects:
                 seccompProfile:
                   type: RuntimeDefault
               volumeMounts:
+                - name: api-cert
+                  mountPath: /cert
+                  readOnly: true
+                # The only writable path under readOnlyRootFilesystem (Undertow and the JVM's temp
+                # files).
                 - name: tmp
                   mountPath: /tmp
+              # Spring Boot's probe groups (management.endpoint.health.probes.enabled).
               startupProbe:
                 httpGet:
-                  path: /api/health
+                  path: /actuator/health/liveness
                   port: http
-                periodSeconds: 5
+                periodSeconds: 10
                 failureThreshold: 30
               readinessProbe:
                 httpGet:
-                  path: /api/health
+                  path: /actuator/health/readiness
                   port: http
-                periodSeconds: 5
+                periodSeconds: 10
+                timeoutSeconds: 5
                 failureThreshold: 3
               livenessProbe:
                 httpGet:
-                  path: /api
+                  path: /actuator/health/liveness
                   port: http
-                periodSeconds: 10
-                failureThreshold: 3
+                periodSeconds: 30
+                timeoutSeconds: 5
+                failureThreshold: 5
               lifecycle:
                 preStop:
                   exec:
-                    # distroless/nodejs has no /bin/sleep; exec hooks skip image ENTRYPOINT
-                    command: ["/nodejs/bin/node", "-e", "setTimeout(() => {}, 10000)"]
+                    # Lets the router stop sending traffic before Undertow's graceful shutdown.
+                    command: ["sleep", "10"]
           volumes:
             - name: tmp
               emptyDir:
                 medium: Memory
-                sizeLimit: 256Mi
+                sizeLimit: 128Mi
+            - name: init-tmp
+              emptyDir:
+                sizeLimit: 64Mi
+            - name: api-cert
+              persistentVolumeClaim:
+                claimName: ${NAME}-${ZONE}-${COMPONENT}-cert
   - apiVersion: v1
     kind: Service
     metadata:
@@ -138,7 +246,7 @@ objects:
       ports:
         - name: http
           port: 80
-          targetPort: 3000
+          targetPort: 8080
       selector:
         deployment: ${NAME}-${ZONE}-${COMPONENT}
   - apiVersion: route.openshift.io/v1
@@ -205,3 +313,28 @@ objects:
       selector:
         matchLabels:
           deployment: ${NAME}-${ZONE}-${COMPONENT}
+  # The TCPS truststore, shared by every pod of the zone (ReadWriteMany).
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      labels:
+        app: ${NAME}-${ZONE}
+      name: ${NAME}-${ZONE}-${COMPONENT}-cert
+    spec:
+      accessModes:
+        - ReadWriteMany
+      resources:
+        requests:
+          storage: 50Mi
+      storageClassName: netapp-file-standard
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      labels:
+        app: ${NAME}-${ZONE}
+      name: ${NAME}-${ZONE}-${COMPONENT}
+    type: Opaque
+    stringData:
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      KEYSTORE_SECRET: ${KEYSTORE_SECRET}

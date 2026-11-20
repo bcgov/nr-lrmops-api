@@ -14,7 +14,7 @@ The LRM Ops API serves the CBR team. It reads data held in the TFM Oracle databa
 
 ## Decision
 
-We will run this repository as a single NestJS API with no frontend, no Postgres database and no Flyway migrations. The backend's OpenShift Route is the public entry point.
+We will run this repository as a single API with no frontend, no Postgres database and no Flyway migrations. The backend's OpenShift Route is the public entry point.
 
 ## Options considered
 
@@ -31,11 +31,10 @@ We will run this repository as a single NestJS API with no frontend, no Postgres
 ## Consequences
 
 - **Positive:** One image (`backend`) per pull request. Deploys apply only `common/openshift.init.yml` (NetworkPolicies) and `backend/openshift.deploy.yml`. No database secrets or backup configuration to manage.
-- **Negative:** No WAF in front of the API. The backend's `/api/health` check reports liveness only, because there is no database to check.
+- **Negative:** No WAF in front of the API.
 - **Follow-up work:**
-  - Add the Oracle connection and its health check when the first data endpoint is built.
   - Decide whether the API needs a WAF or extra security headers now that the API is no longer behind Caddy.
-  - Set the SonarCloud project key in `.github/workflows/analysis.yml` once the project is provisioned.
+  - Set the `SONAR_PROJECT_KEY_BACKEND` variable once the SonarCloud project is provisioned.
 
 ## Notes
 

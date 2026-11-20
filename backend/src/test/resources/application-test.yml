@@ -1,0 +1,16 @@
+# Test profile: H2 in place of Oracle, and a dummy issuer. Nothing contacts the realm — the JWKS is
+# fetched lazily, on the first token validated, and these tests send none that reach that point.
+spring:
+  datasource:
+    url: jdbc:h2:mem:lrmops;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+    hikari:
+      data-source-properties: {}
+  jpa:
+    hibernate:
+      ddl-auto: none
+
+KEYCLOAK_ISSUER_URI: https://test.loginproxy.gov.bc.ca/auth/realms/standard
+ALLOWED_ORIGINS: https://allowed.example.gov.bc.ca

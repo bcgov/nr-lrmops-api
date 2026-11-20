@@ -1,0 +1,113 @@
+# LRM Ops API configuration.
+#
+# The load-bearing parts: the Oracle TCPS datasource (read-only proxy user on TFM), the Keycloak
+# resource-server wiring (access per endpoint by OAuth2 scope, see ApiScopes), and actuator exposure
+# for the probes and scrape.
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  max-http-request-header-size: 16KB
+  error:
+    include-message: always
+  # Honour X-Forwarded-* from the OpenShift router when reconstructing the request URL.
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: lrmops-api
+  datasource:
+    url: "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=${DATABASE_HOST})(PORT=${DATABASE_PORT:1543}))(CONNECT_DATA=(SERVICE_NAME=${DATABASE_SERVICE_NAME})(SERVER=DEDICATED)))"
+    username: ${DATABASE_USER}
+    password: ${DATABASE_PASSWORD}
+    driver-class-name: oracle.jdbc.OracleDriver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      # Every connection is read-only: PROXY_FSA_LRM_READ_WRITE_USER holds SELECT grants only, and
+      # this makes a stray write fail in the driver rather than reach the database.
+      read-only: true
+      data-source-properties:
+        javax.net.ssl.trustStoreType: JKS
+        javax.net.ssl.trustStore: ${TRUSTSTORE_PATH:/cert/jssecacerts}
+        javax.net.ssl.trustStorePassword: ${KEYSTORE_SECRET}
+  jpa:
+    show-sql: false
+    # This API owns no tables. TFM is LRMOPS's schema; the app reads it through SELECT grants
+    # (scripts/db/). `none` is already the default against a non-embedded datasource; it is pinned
+    # because the default flips to create-drop the moment a test swaps in H2.
+    hibernate:
+      ddl-auto: none
+    # No session held open across the request: repositories return fully loaded objects.
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+        # Rows per round trip to Oracle (the driver's own default is 10). A page of road search
+        # results is one round trip either way; larger reads are not.
+        jdbc:
+          fetch_size: 500
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Validate Keycloak-issued JWT bearer tokens. Setting both issuer-uri and jwk-set-uri
+          # makes Spring Boot build a NimbusJwtDecoder from the JWKS (RS256 signature validation)
+          # plus an issuer validator, without an OIDC discovery call at startup.
+          issuer-uri: ${KEYCLOAK_ISSUER_URI}
+          jwk-set-uri: ${spring.security.oauth2.resourceserver.jwt.issuer-uri}/protocol/openid-connect/certs
+  mvc:
+    problemdetails:
+      enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # health + prometheus only — the probes and the Prometheus scrape. These are the anonymous
+        # paths in SecurityConfiguration.PUBLIC_PATHS; keep the two lists in step.
+        include: "health,prometheus"
+  endpoint:
+    health:
+      # /actuator/health/liveness and /readiness for the OpenShift probes, also off-cluster.
+      probes:
+        enabled: true
+      # The probes only check the status code, so component detail is published to no one.
+      show-details: never
+
+springdoc:
+  swagger-ui:
+    tagsSorter: alpha
+    operationsSorter: alpha
+
+info:
+  app:
+    name: ${spring.application.name}
+    version: ${APP_VERSION:0.0.1-SNAPSHOT}
+    zone: ${APP_ZONE:local}
+
+ca:
+  bc:
+    gov:
+      nrs:
+        environment: ${APP_ZONE:local}
+        cors:
+          # Comma-separated browser origins allowed to call the API directly (SecurityConfiguration).
+          # Backends calling server to server need none. Empty allows no cross-origin browser call.
+          allowed-origins: ${ALLOWED_ORIGINS:}
+
+# Logging — Spring Boot default stack (SLF4J + Logback). Override per category with env vars:
+#   APP_LOG_LEVEL          -> ca.bc.gov.nrs.lrmops
+#   HIKARI_LOG_LEVEL       -> com.zaxxer.hikari
+#   ORACLE_JDBC_LOG_LEVEL  -> oracle.jdbc
+#   LOGGING_LEVEL_ROOT     -> root logger
+logging:
+  level:
+    ca.bc.gov.nrs.lrmops: ${APP_LOG_LEVEL:INFO}
+    com.zaxxer.hikari: ${HIKARI_LOG_LEVEL:INFO}
+    oracle.jdbc: ${ORACLE_JDBC_LOG_LEVEL:INFO}
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [${spring.application.name}] [%X{X-TRACE-ID:-},${PID:-}] [%t] %logger:%L - %m%n%wEx"

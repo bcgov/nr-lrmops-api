@@ -41,6 +41,13 @@ jobs:
     uses: ./.github/workflows/reusable-deploy.yml
     secrets:
       oc_token: ${{ secrets.oc_token }}
+      database_host: ${{ secrets.database_host }}
+      database_service_name: ${{ secrets.database_service_name }}
+      database_user: ${{ secrets.database_user }}
+      database_password: ${{ secrets.database_password }}
+      keystore_secret: ${{ secrets.keystore_secret }}
+      keycloak_sa_client_id: ${{ secrets.keycloak_sa_client_id }}
+      keycloak_sa_client_secret: ${{ secrets.keycloak_sa_client_secret }}
     with:
       target: ${{ github.event.number }}
       tag: ${{ github.event.pull_request.head.sha }}
@@ -66,7 +73,8 @@ jobs:
           header: pr-deployment-links
           message: |
             ### 🚀 Deployments Available
-            - [Backend](https://${{ github.event.repository.name }}-${{ github.event.number }}.apps.silver.devops.gov.bc.ca/api)
+            - [Backend](https://${{ github.event.repository.name }}-${{ github.event.number }}.apps.gold.devops.gov.bc.ca/actuator/health)
+            - [Swagger UI](https://${{ github.event.repository.name }}-${{ github.event.number }}.apps.gold.devops.gov.bc.ca/swagger-ui/index.html)
 
   # ==========================================================================
   # WARNING: This job acts as the required merge gate for this workflow.

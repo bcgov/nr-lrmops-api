@@ -25,6 +25,27 @@ on:
       oc_token:
         description: OpenShift token
         required: true
+      database_host:
+        description: Oracle host (TFM, DBQ05/DBP05)
+        required: true
+      database_service_name:
+        description: Oracle service name
+        required: true
+      database_user:
+        description: Oracle user (PROXY_FSA_LRM_READ_WRITE_USER)
+        required: true
+      database_password:
+        description: Oracle password
+        required: true
+      keystore_secret:
+        description: Password for the TCPS truststore the init container builds
+        required: true
+      keycloak_sa_client_id:
+        description: Keycloak service-account client id used to sync client scopes
+        required: false
+      keycloak_sa_client_secret:
+        description: Keycloak service-account client secret (needs realm-management 'manage-clients') for syncing client scopes
+        required: false
     outputs:
       triggered:
         description: Has deployment been triggered?
@@ -67,10 +88,30 @@ jobs:
         include:
           - name: backend
             file: backend/openshift.deploy.yml
-            parameters: -p IMAGE_TAG="${{ inputs.tag }}"
     outputs:
       triggered: ${{ steps.deploy.outputs.triggered }}
+    # Secrets go through job-level env vars rather than `${{ secrets.* }}` inside `parameters`.
+    # The deployer runs `oc process ... <parameters>` in a bash double-quoted context, so a `$X` in
+    # a substituted secret would be expanded by bash and silently dropped; "$VAR" expands once.
+    #
+    # KC_SA_CLIENT_ID is job env so the scope step's `if:` can gate on it: the `secrets` context
+    # isn't available in step `if:` conditions, but `env` is.
+    env:
+      DATABASE_PASSWORD: ${{ secrets.database_password }}
+      KEYSTORE_SECRET: ${{ secrets.keystore_secret }}
+      KC_SA_CLIENT_ID: ${{ secrets.keycloak_sa_client_id }}
     steps:
+      - uses: actions/checkout@v7
+
+      # Idempotently create the API's OAuth2 client scopes in this environment's Keycloak realm.
+      # Skipped unless the service-account client id is configured.
+      - name: Ensure Keycloak client scopes
+        if: ${{ env.KC_SA_CLIENT_ID != '' }}
+        env:
+          KEYCLOAK_ISSUER_URI: ${{ vars.KEYCLOAK_SA_ISSUER_URI }}
+          KC_SA_CLIENT_SECRET: ${{ secrets.keycloak_sa_client_secret }}
+        run: ./.github/scripts/ensure-keycloak-scopes.sh
+
       - uses: bcgov/action-deployer-openshift@e2d60eb9cacceb89c3b97d8dcf0a2c460eea5eab # v4.2.3
         id: deploy
         with:
@@ -78,9 +119,17 @@ jobs:
           oc_namespace: ${{ vars.OC_NAMESPACE }}
           oc_server: ${{ vars.oc_server }}
           oc_token: ${{ secrets.oc_token }}
-          debug: true
+          # Off: with debug on, the deployer logs the processed Template, including the Secret's
+          # stringData, and masking misses values once they are re-encoded.
+          debug: false
           parameters: -p ZONE="${{ inputs.target }}"
             -p NAME="${{ github.event.repository.name }}"
-            ${{ matrix.parameters }}
+            -p IMAGE_TAG="${{ inputs.tag }}"
+            -p KEYCLOAK_ISSUER_URI="${{ vars.KEYCLOAK_SA_ISSUER_URI }}"
+            -p ALLOWED_ORIGINS="${{ vars.ALLOWED_ORIGINS }}"
+            -p DATABASE_HOST="${{ secrets.database_host }}"
+            -p DATABASE_SERVICE_NAME="${{ secrets.database_service_name }}"
+            -p DATABASE_USER="${{ secrets.database_user }}"
+            -p DATABASE_PASSWORD="$DATABASE_PASSWORD"
+            -p KEYSTORE_SECRET="$KEYSTORE_SECRET"
           triggers: ${{ inputs.triggers }}
-

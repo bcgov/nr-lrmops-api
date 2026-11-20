@@ -1,16 +1,36 @@
-# Reusable vars
+# Local development: the Spring Boot API on http://localhost:8080.
+#
+# Prereqs (host machine):
+#   1. BC Gov VPN connected: the Oracle host is reached through the host's routing.
+#   2. backend/src/main/resources/application-local.yml (gitignored) holds the database and
+#      Keycloak values the `local` profile reads; see backend/.env.example for the names.
+#   3. backend/src/main/resources/cert/jssecacerts (gitignored) is the Oracle TCPS truststore.
+#
+# No hot reload: restart the service after Java changes (`docker compose restart backend`).
+# The first `up` downloads the Maven cache; the maven-cache volume keeps it.
+
 x-var:
-  - &node-image node:22
+  - &java-image maven:3.9.16-amazoncorretto-21-alpine
 
 services:
   backend:
+    image: *java-image
     container_name: backend
-    entrypoint: sh -c "npm i && npm run start:dev"
+    working_dir: /app
+    entrypoint: sh -c "mvn -B -DskipTests spring-boot:run"
     environment:
-      NODE_ENV: development
-    image: *node-image
-    ports: ["3001:3000"]
+      SPRING_PROFILES_ACTIVE: local
+      TRUSTSTORE_PATH: /app/src/main/resources/cert/jssecacerts
+    ports: ["8080:8080"]
+    volumes:
+      - ./backend:/app
+      - maven-cache:/root/.m2
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api"]
-    working_dir: "/app"
-    volumes: ["./backend:/app", "/app/node_modules"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 90s
+      retries: 5
+
+volumes:
+  maven-cache:

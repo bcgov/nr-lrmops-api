@@ -408,3 +408,9 @@ pyrightconfig.json
 specs
 
 .copilot-memory
+
+### Spring Boot ###
+# The Oracle TCPS truststore is never committed (local credentials are covered by
+# **/application-*.yml above). The test profile holds no secrets and must be committed.
+**/jssecacerts
+!backend/src/test/resources/application-test.yml
