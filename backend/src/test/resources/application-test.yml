@@ -2,7 +2,7 @@
 # fetched lazily, on the first token validated, and these tests send none that reach that point.
 spring:
   datasource:
-    url: jdbc:h2:mem:lrmops;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:lrmops;MODE=Oracle;DB_CLOSE_DELAY=-1
     username: sa
     password: ""
     driver-class-name: org.h2.Driver
@@ -11,6 +11,11 @@ spring:
   jpa:
     hibernate:
       ddl-auto: none
+  # The slice of LRMOPS's TFM schema the API reads, as an empty table.
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:tfm-schema.sql
 
 KEYCLOAK_ISSUER_URI: https://test.loginproxy.gov.bc.ca/auth/realms/standard
 ALLOWED_ORIGINS: https://allowed.example.gov.bc.ca
