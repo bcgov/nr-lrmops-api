@@ -10,7 +10,7 @@ on:
         type: string
 
 env:
-  DOMAIN: apps.silver.devops.gov.bc.ca
+  DOMAIN: apps.gold.devops.gov.bc.ca
   PREFIX: ${{ github.event.repository.name }}-${{ inputs.target }}
 
 permissions: {}
@@ -19,7 +19,8 @@ jobs:
   integration-tests:
     name: Integration
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    # The health wait alone can take five minutes while a JVM pod starts.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -40,9 +41,9 @@ jobs:
         env:
           BASE_URL: https://${{ env.PREFIX }}.${{ env.DOMAIN }}
         run: |
-          echo "Waiting for backend health check at ${BASE_URL}/api/health..."
+          echo "Waiting for backend health check at ${BASE_URL}/actuator/health..."
           for i in {1..30}; do
-            status=$(curl -k --connect-timeout 5 --max-time 10 -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/health" || true)
+            status=$(curl -k --connect-timeout 5 --max-time 10 -s -o /dev/null -w "%{http_code}" "${BASE_URL}/actuator/health" || true)
             if [ "$status" -eq 200 ]; then
               echo "Backend is healthy!"
               exit 0
@@ -55,7 +56,7 @@ jobs:
 
       - name: Run Integration Tests
         env:
-          API_NAME: nest
+          API_NAME: spring
           BASE_URL: https://${{ env.PREFIX }}.${{ env.DOMAIN }}
         run: |
           cd common/tests/integration

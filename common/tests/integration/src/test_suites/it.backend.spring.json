@@ -1,0 +1,35 @@
+{
+  "api_name": "spring",
+  "api_version": "1.0.0",
+  "base_url": "${BASE_URL}",
+  "tests": [
+    {
+      "name": "Health Endpoint TEST",
+      "methods": ["GET"],
+      "path": "/actuator/health",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "assertions": [
+        {
+          "method": "GET",
+          "status_code": 200
+        }
+      ]
+    },
+    {
+      "name": "API Requires A Token TEST",
+      "methods": ["GET"],
+      "path": "/api/v1/roads",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "assertions": [
+        {
+          "method": "GET",
+          "status_code": 401
+        }
+      ]
+    }
+  ]
+}

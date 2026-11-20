@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>ca.bc.gov.nrs</groupId>
+  <artifactId>lrmops-api</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <packaging>jar</packaging>
+  <name>LRM Ops API</name>
+  <description>LRM Ops API (Spring Boot + BC Gov SSO client-credentials JWT auth, read-only Oracle TFM schema)</description>
+
+  <url>https://github.com/bcgov/nr-lrmops-api</url>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <scm>
+    <connection>scm:git:https://github.com/bcgov/nr-lrmops-api.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com:bcgov/nr-lrmops-api.git</developerConnection>
+    <url>https://github.com/bcgov/nr-lrmops-api</url>
+    <tag>HEAD</tag>
+  </scm>
+
+  <properties>
+    <sonar.language>java</sonar.language>
+    <sonar.organization>bcgov-sonarcloud</sonar.organization>
+    <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+
+    <!--
+      Java 21, not newer: Java 24+ fails the Oracle TCPS handshake (the database accepts only
+      TLS_RSA_* ciphers). renovate.json pins the images below 22 for the same reason; move the
+      runtime image, the Maven build image and this property together.
+    -->
+    <java.version>21</java.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+    <maven.compiler.version>3.16.0</maven.compiler.version>
+    <maven.compiler.source>${java.version}</maven.compiler.source>
+    <maven.compiler.target>${java.version}</maven.compiler.target>
+
+    <lombok.version>1.18.48</lombok.version>
+    <ojdbc.version>23.26.4.0.0</ojdbc.version>
+    <springdoc.version>2.8.17</springdoc.version>
+
+    <!--
+      Overrides of Boot-managed versions for CVEs Boot 3.5.16's own picks don't yet cover.
+      Drop once the parent manages a version at or above it.
+      - jackson: 2.21.7+ fixes the jackson-core ReDoS / invalid-token and jackson-databind
+        forward-reference / type-ID cache advisories (Boot manages 2.21.4).
+    -->
+    <jackson-bom.version>2.21.8</jackson-bom.version>
+  </properties>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.5.16</version>
+    <relativePath/>
+  </parent>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-starter-tomcat</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-undertow</artifactId>
+    </dependency>
+    <!--
+      CVE-2026-3260 — Undertow DoS: a GET carrying multipart/form-data is parsed and spooled to disk
+      as soon as the app reads parameters. Advisory range is `< 2.4.0.Beta1`; Boot 3.5.x manages
+      2.3.x. Pinned on undertow-core alone: the 2.4.x line publishes only the core module, so
+      overriding Boot's `undertow.version` property cannot resolve. Drop once Boot moves past it.
+    -->
+    <dependency>
+      <groupId>io.undertow</groupId>
+      <artifactId>undertow-core</artifactId>
+      <version>2.4.4.Final</version>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+
+    <!-- OpenAPI / Swagger UI -->
+    <dependency>
+      <groupId>org.springdoc</groupId>
+      <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+      <version>${springdoc.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.oracle.database.jdbc</groupId>
+      <artifactId>ojdbc11</artifactId>
+      <version>${ojdbc.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <version>${lombok.version}</version>
+      <optional>true</optional>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- Stands in for Oracle in the context test; there is no Oracle in CI. -->
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>${maven.compiler.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.sonarsource.scanner.maven</groupId>
+          <artifactId>sonar-maven-plugin</artifactId>
+          <version>5.8.0.7211</version>
+        </plugin>
+        <plugin>
+          <groupId>org.jacoco</groupId>
+          <artifactId>jacoco-maven-plugin</artifactId>
+          <version>0.8.16</version>
+        </plugin>
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <configuration>
+            <forkCount>1</forkCount>
+            <reuseForks>true</reuseForks>
+            <useSystemClassLoader>false</useSystemClassLoader>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-failsafe-plugin</artifactId>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+
+  <profiles>
+    <profile>
+      <id>coverage</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-enforcer-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>enforce-java</id>
+                <goals>
+                  <goal>enforce</goal>
+                </goals>
+                <configuration>
+                  <rules>
+                    <requireJavaVersion>
+                      <version>[21,)</version>
+                      <message>This project requires Java 21 or newer. Set JAVA_HOME to a JDK 21+ install.</message>
+                    </requireJavaVersion>
+                  </rules>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <version>${maven.compiler.version}</version>
+            <configuration>
+              <release>${java.version}</release>
+              <annotationProcessorPaths>
+                <path>
+                  <groupId>org.projectlombok</groupId>
+                  <artifactId>lombok</artifactId>
+                  <version>${lombok.version}</version>
+                </path>
+              </annotationProcessorPaths>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>integration-tests</id>
+                <goals>
+                  <goal>integration-test</goal>
+                  <goal>verify</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-maven-plugin</artifactId>
+          </plugin>
+          <plugin>
+            <groupId>org.jacoco</groupId>
+            <artifactId>jacoco-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>prepare-agent</id>
+                <goals>
+                  <goal>prepare-agent</goal>
+                </goals>
+              </execution>
+              <execution>
+                <id>coverage-report</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>report</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

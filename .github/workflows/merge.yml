@@ -34,7 +34,15 @@ jobs:
     needs: [init]
     uses: ./.github/workflows/reusable-deploy.yml
     secrets:
+      oc_namespace: ${{ secrets.oc_namespace }}
       oc_token: ${{ secrets.oc_token }}
+      database_host: ${{ secrets.database_host }}
+      database_service_name: ${{ secrets.database_service_name }}
+      database_user: ${{ secrets.database_user }}
+      database_password: ${{ secrets.database_password }}
+      keystore_secret: ${{ secrets.keystore_secret }}
+      keycloak_sa_client_id: ${{ secrets.keycloak_sa_client_id }}
+      keycloak_sa_client_secret: ${{ secrets.keycloak_sa_client_secret }}
     with:
       environment: test
       target: test
@@ -47,64 +55,96 @@ jobs:
     with:
       target: test
 
-  # PROD on every merge. For PROD only on releases, comment out deploy-prod,
-  # monitor-prod and promote below; release.yml then handles PROD.
-  deploy-prod:
-    name: PROD Deploys (${{ needs.init.outputs.pr }})
-    needs: [tests, init]
-    uses: ./.github/workflows/reusable-deploy.yml
-    secrets:
-      oc_token: ${{ secrets.oc_token }}
-    with:
-      environment: prod
-      target: prod
-      tag: ${{ needs.init.outputs.pr }}
+  # ── PROD deploy + monitor + promote: DISABLED ════════════════════════
+  #
+  # The API must not deploy to PROD until go-live. The three jobs below are
+  # commented out rather than guarded by an `if:` so that no combination of
+  # inputs, re-run or workflow_dispatch can reach production: a condition is
+  # something you can get wrong, an absent job is not. There is no release
+  # workflow either, so nothing in this repo can deploy PROD.
+  #
+  # Merges to main deploy TEST only (see `deploy-test` above). PR previews go
+  # to the dev namespace via pr-open.yml.
+  #
+  # They are disabled AS A SET, and must be re-enabled as a set: `monitor-prod`
+  # and `promote` declare `needs: [deploy-prod]`, so uncommenting one on its own
+  # makes the WHOLE workflow file invalid, and every run fails, TEST included.
+  # Add all three back to `results.needs` below when re-enabling.
+  #
+  # Before the first PROD enable, confirm all of:
+  #   - The prod namespace exists, and the `prod` GitHub Environment carries
+  #     OC_NAMESPACE / OC_TOKEN.
+  #   - KEYCLOAK_SA_ISSUER_URI on the `prod` Environment points at the PROD
+  #     realm, and KEYCLOAK_SA_CLIENT_ID / _SECRET (if set) is a PROD-realm
+  #     service account, so the API's scopes are created there.
+  #   - The Oracle credentials on the `prod` Environment reach the PROD
+  #     database (DBP05), not TEST, and the proxy user and grants exist there.
+  #   - ALLOWED_ORIGINS on the `prod` Environment lists the PROD browser apps.
+  #
+  # deploy-prod:
+  #   name: PROD Deploys (${{ needs.init.outputs.pr }})
+  #   needs: [tests, init]
+  #   uses: ./.github/workflows/reusable-deploy.yml
+  #   secrets:
+  #     oc_namespace: ${{ secrets.oc_namespace }}
+  #     oc_token: ${{ secrets.oc_token }}
+  #     database_host: ${{ secrets.database_host }}
+  #     database_service_name: ${{ secrets.database_service_name }}
+  #     database_user: ${{ secrets.database_user }}
+  #     database_password: ${{ secrets.database_password }}
+  #     keystore_secret: ${{ secrets.keystore_secret }}
+  #     keycloak_sa_client_id: ${{ secrets.keycloak_sa_client_id }}
+  #     keycloak_sa_client_secret: ${{ secrets.keycloak_sa_client_secret }}
+  #   with:
+  #     environment: prod
+  #     target: prod
+  #     tag: ${{ needs.init.outputs.pr }}
 
-  # Sync Sysdig email alerts for PROD. No-ops cleanly if SYSDIG_API_TOKEN is
-  # unset or monitoring/alerts/ is empty — adoption is gradual. Alert
-  # templates live in monitoring/alerts/ in this repo; add or remove files
-  # there to customize the alert set.
-  monitor-prod:
-    name: Sysdig Monitor (PROD)
-    needs: [deploy-prod]
-    runs-on: ubuntu-26.04
-    environment: prod
-    permissions:
-      contents: read
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-      # 0.0.3 is the first version with __APP__ template substitution, which
-      # monitoring/alerts/*.json depend on — don't downgrade this pin.
-      - uses: bcgov/actions-openshift/sysdig-monitor@a7a039ba45f9635c0bdbcc6b4cdbd2555811e100 # v0.8.0
-        with:
-          sysdig_api_token: ${{ secrets.SYSDIG_API_TOKEN }}
-          oc_namespace: ${{ vars.OC_NAMESPACE }}
-          app: ${{ github.event.repository.name }}
-          components: |
-            backend
+  # # Sync Sysdig email alerts for PROD. No-ops cleanly if SYSDIG_API_TOKEN is
+  # # unset or monitoring/alerts/ is empty — adoption is gradual. Alert
+  # # templates live in monitoring/alerts/ in this repo; add or remove files
+  # # there to customize the alert set.
+  # monitor-prod:
+  #   name: Sysdig Monitor (PROD)
+  #   needs: [deploy-prod]
+  #   runs-on: ubuntu-26.04
+  #   environment: prod
+  #   permissions:
+  #     contents: read
+  #   timeout-minutes: 5
+  #   steps:
+  #     - uses: actions/checkout@v7
+  #     # 0.0.3 is the first version with __APP__ template substitution, which
+  #     # monitoring/alerts/*.json depend on — don't downgrade this pin.
+  #     - uses: bcgov/actions-openshift/sysdig-monitor@a7a039ba45f9635c0bdbcc6b4cdbd2555811e100 # v0.8.0
+  #       with:
+  #         sysdig_api_token: ${{ secrets.SYSDIG_API_TOKEN }}
+  #         oc_namespace: ${{ secrets.OC_NAMESPACE }}
+  #         app: ${{ github.event.repository.name }}
+  #         components: |
+  #           backend
 
-  promote:
-    name: Promote Images
-    needs: [deploy-prod, init]
-    runs-on: ubuntu-slim
-    permissions:
-      packages: write
-    strategy:
-      matrix:
-        package: [backend]
-    timeout-minutes: 1
-    steps:
-      - uses: shrink/actions-docker-registry-tag@e6aaef25c595b6e0edd18bf4c7dbfea3abd43299 # v5
-        with:
-          registry: ghcr.io
-          repository: ${{ github.repository }}/${{ matrix.package }}
-          target: ${{ needs.init.outputs.pr }}
-          tags: prod
+  # promote:
+  #   name: Promote Images
+  #   needs: [deploy-prod, init]
+  #   runs-on: ubuntu-slim
+  #   permissions:
+  #     packages: write
+  #   strategy:
+  #     matrix:
+  #       package: [backend]
+  #   timeout-minutes: 1
+  #   steps:
+  #     - uses: shrink/actions-docker-registry-tag@e6aaef25c595b6e0edd18bf4c7dbfea3abd43299 # v5
+  #       with:
+  #         registry: ghcr.io
+  #         repository: ${{ github.repository }}/${{ matrix.package }}
+  #         target: ${{ needs.init.outputs.pr }}
+  #         tags: prod
 
   results:
     name: Merge Results
-    needs: [init, deploy-test, tests, deploy-prod, monitor-prod, promote]
+    needs: [init, deploy-test, tests]
     if: always()
     runs-on: ubuntu-slim
     timeout-minutes: 1
