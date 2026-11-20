@@ -48,10 +48,10 @@ class LrmopsApiApplicationTest {
     mvc.perform(get("/api/v1/roads")).andExpect(status().isUnauthorized());
   }
 
-  /** A valid token gets past authentication; with no endpoint at that path yet, that is a 404. */
+  /** A valid token without the endpoint's scope is authenticated but not allowed. */
   @Test
-  void aValidTokenIsAuthenticated() throws Exception {
-    mvc.perform(get("/api/v1/roads").with(jwt())).andExpect(status().isNotFound());
+  void aValidTokenWithoutTheScopeIsForbidden() throws Exception {
+    mvc.perform(get("/api/v1/roads").with(jwt())).andExpect(status().isForbidden());
   }
 
   @Test
