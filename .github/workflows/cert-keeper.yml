@@ -38,7 +38,7 @@ jobs:
           hostname: ${{ vars.ROUTE_HOST }}
           route_name: ${{ github.event.repository.name }}-vanity-url
           target_service: ${{ github.event.repository.name }}-prod-backend
-          oc_namespace: ${{ vars.OC_NAMESPACE }}
+          oc_namespace: ${{ secrets.OC_NAMESPACE }}
           oc_server: ${{ vars.OC_SERVER }}
           oc_token: ${{ secrets.OC_TOKEN }}
 

@@ -22,6 +22,9 @@ on:
         type: string
 
     secrets:
+      oc_namespace:
+        description: OpenShift namespace
+        required: true
       oc_token:
         description: OpenShift token
         required: true
@@ -65,7 +68,7 @@ jobs:
         id: deploy
         with:
           file: common/openshift.init.yml
-          oc_namespace: ${{ vars.OC_NAMESPACE }}
+          oc_namespace: ${{ secrets.oc_namespace }}
           oc_server: ${{ vars.oc_server }}
           oc_token: ${{ secrets.oc_token }}
           # NetworkPolicies: create if missing.
@@ -116,7 +119,7 @@ jobs:
         id: deploy
         with:
           file: ${{ matrix.file }}
-          oc_namespace: ${{ vars.OC_NAMESPACE }}
+          oc_namespace: ${{ secrets.oc_namespace }}
           oc_server: ${{ vars.oc_server }}
           oc_token: ${{ secrets.oc_token }}
           # Off: with debug on, the deployer logs the processed Template, including the Secret's

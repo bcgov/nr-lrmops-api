@@ -121,11 +121,11 @@ Nothing deploys PROD until go-live: the PROD jobs in `merge.yml` are commented o
 | Environment | Name | Description |
 |-------------|------|-------------|
 | repository | `vars.OC_SERVER` | OpenShift API server URL, e.g. `https://api.gold.devops.gov.bc.ca:6443` |
-| repository | `vars.OC_NAMESPACE` | PR namespace, `<plate>-dev` |
+| repository | `secrets.OC_NAMESPACE` | PR namespace, `<plate>-dev` |
 | repository | `secrets.OC_TOKEN` | Deploy token for `<plate>-dev` |
-| test | `vars.OC_NAMESPACE` | `<plate>-test` |
+| test | `secrets.OC_NAMESPACE` | `<plate>-test` |
 | test | `secrets.OC_TOKEN` | Deploy token for `<plate>-test` |
-| prod | `vars.OC_NAMESPACE` | `<plate>-prod` |
+| prod | `secrets.OC_NAMESPACE` | `<plate>-prod` |
 | prod | `secrets.OC_TOKEN` | Deploy token for `<plate>-prod` |
 | each | `vars.KEYCLOAK_SA_ISSUER_URI` | Keycloak realm issuer that callers' tokens come from, e.g. `https://test.loginproxy.gov.bc.ca/auth/realms/<realm>` |
 | each (optional) | `vars.ALLOWED_ORIGINS` | Comma-separated browser origins allowed to call the API directly (CORS), e.g. `https://app.gov.bc.ca`; empty allows none |
