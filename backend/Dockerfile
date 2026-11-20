@@ -10,7 +10,7 @@ RUN mkdir -p target/dependency && (cd target/dependency; jar -xf ../*.jar)
 # (2026-11-01), so America/Vancouver would fall back to UTC−8 and Pacific timestamps would be an
 # hour behind. TZ only names the zone; the rules come from this JDK. Stay below 22: Java 24+ fails
 # the Oracle TCPS handshake (renovate.json pins it).
-FROM eclipse-temurin:21.0.13_9-jdk-alpine-3.23
+FROM eclipse-temurin:21.0.13.1_2-jdk-alpine-3.23
 
 RUN adduser -D -s /bin/sh spring
 USER spring
