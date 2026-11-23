@@ -1,0 +1,164 @@
+package ca.bc.gov.nrs.lrmops.service.v1;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import ca.bc.gov.nrs.lrmops.struct.v1.HeaderSort;
+import ca.bc.gov.nrs.lrmops.struct.v1.PagedResponse;
+import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchCriteria;
+import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchResult;
+import ca.bc.gov.nrs.lrmops.struct.v1.RoadSortColumn;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Sort;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.jdbc.Sql;
+
+/** Road search through the service and the Hibernate query, on H2 seeded by tfm-road-data.sql. */
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@ActiveProfiles("test")
+@Import(RoadService.class)
+@Sql("/tfm-road-data.sql")
+class RoadServiceTest {
+
+  private static final RoadSearchCriteria ANY = new RoadSearchCriteria(null, null, null, null, null);
+
+  @Autowired
+  private RoadService service;
+
+  private PagedResponse<RoadSearchResult> search(RoadSearchCriteria criteria) {
+    return service.search(criteria, 0, 50, List.of());
+  }
+
+  private static List<String> pairs(PagedResponse<RoadSearchResult> page) {
+    return page.content().stream().map(r -> r.roadId() + "/" + r.sectionId()).toList();
+  }
+
+  @Test
+  void oneRowPerPairInRoadNameOrder() {
+    PagedResponse<RoadSearchResult> page = search(ANY);
+
+    // Two-district section once; NEWGEOMETRY-only and section-less rows not at all; no name last.
+    assertThat(pairs(page)).containsExactly(
+        "S00100/A", "R08317/I", "R07571/AA", "9456/01", "R00001/B");
+    assertThat(page.totalElements()).isEqualTo(5);
+  }
+
+  @Test
+  void namesAreTrimmedAndRetiredRoadsFlagged() {
+    RoadSearchResult road = search(new RoadSearchCriteria(null, "R08317", null, null, null))
+        .content().get(0);
+
+    assertThat(road).isEqualTo(new RoadSearchResult("R08317", "I", "AM 4", "RP", true, "CANFOR"));
+  }
+
+  @Test
+  void anEditInProgressShowsTheOldGeometry() {
+    RoadSearchResult road = search(new RoadSearchCriteria(null, "9456", null, null, null))
+        .content().get(0);
+
+    assertThat(road.roadName()).isEqualTo("CEDAR ROAD");
+    assertThat(road.retired()).isFalse();
+  }
+
+  @Test
+  void nameMatchIgnoresCaseAndExtraSpaces() {
+    assertThat(pairs(search(new RoadSearchCriteria("  am   4 ", null, null, null, null))))
+        .containsExactly("R08317/I");
+  }
+
+  @Test
+  void everyCriterionIsAPartialMatch() {
+    assertThat(pairs(search(new RoadSearchCriteria(null, "0757", "a", null, null))))
+        .containsExactly("R07571/AA");
+    assertThat(pairs(search(new RoadSearchCriteria(null, null, null, null, "fraser"))))
+        .containsExactly("9456/01");
+  }
+
+  @Test
+  void tenureTypeFindsActiveAndRetiredOrRetiredOnly() {
+    assertThat(pairs(search(new RoadSearchCriteria(null, null, null, "rp", null))))
+        .containsExactly("R08317/I", "9456/01");
+    assertThat(pairs(search(new RoadSearchCriteria(null, null, null, "retire", null))))
+        .containsExactly("R08317/I");
+  }
+
+  @Test
+  void wildcardsInInputMatchLiterally() {
+    assertThat(pairs(search(new RoadSearchCriteria("100%", null, null, null, null))))
+        .containsExactly("S00100/A");
+    assertThat(pairs(search(new RoadSearchCriteria("N_H", null, null, null, null))))
+        .containsExactly("S00100/A");
+    assertThat(search(new RoadSearchCriteria("%", null, null, null, null)).content()).hasSize(1);
+    assertThat(search(new RoadSearchCriteria("_", null, null, null, null)).content()).hasSize(1);
+  }
+
+  @Test
+  void blankCriteriaAreIgnored() {
+    assertThat(search(new RoadSearchCriteria(" ", "", null, "  ", null)).totalElements())
+        .isEqualTo(5);
+  }
+
+  @Test
+  void noMatchIsAnEmptyPage() {
+    PagedResponse<RoadSearchResult> page =
+        search(new RoadSearchCriteria("NOWHERE", null, null, null, null));
+
+    assertThat(page.content()).isEmpty();
+    assertThat(page.totalElements()).isZero();
+  }
+
+  @Test
+  void sortsByTheColumnsAskedThenTheDefaultOrder() {
+    PagedResponse<RoadSearchResult> page = service.search(ANY, 0, 50,
+        List.of(new HeaderSort<>(RoadSortColumn.TENURE_TYPE, Sort.Direction.DESC)));
+
+    // By the stored type, descending: SUP, RP-RETIRE, RP, OTH, FSR.
+    assertThat(pairs(page)).containsExactly(
+        "S00100/A", "R08317/I", "9456/01", "R00001/B", "R07571/AA");
+  }
+
+  @Test
+  void sortsByEveryColumn() {
+    for (RoadSortColumn column : RoadSortColumn.values()) {
+      assertThat(service.search(ANY, 0, 50,
+          List.of(new HeaderSort<>(column, Sort.Direction.DESC))).content()).hasSize(5);
+    }
+  }
+
+  @Test
+  void pagesCarryTheTotal() {
+    PagedResponse<RoadSearchResult> second = service.search(ANY, 1, 2, List.of());
+
+    assertThat(pairs(second)).containsExactly("R07571/AA", "9456/01");
+    assertThat(second.totalElements()).isEqualTo(5);
+    assertThat(second.totalPages()).isEqualTo(3);
+  }
+
+  @Test
+  void aPagePastTheEndStillCounts() {
+    PagedResponse<RoadSearchResult> page = service.search(ANY, 10, 2, List.of());
+
+    assertThat(page.content()).isEmpty();
+    assertThat(page.totalElements()).isEqualTo(5);
+  }
+
+  @Test
+  void pageSizeIsBounded() {
+    assertThat(service.search(ANY, 0, 0, List.of()).pageSize())
+        .isEqualTo(RoadService.DEFAULT_PAGE_SIZE);
+    assertThat(service.search(ANY, 0, 10_000, List.of()).pageSize())
+        .isEqualTo(RoadService.MAX_PAGE_SIZE);
+    assertThat(service.search(ANY, -1, 2, List.of()).pageNumber()).isZero();
+  }
+
+  @Test
+  void containsEscapesLikeWildcards() {
+    assertThat(RoadService.contains(" a\\b%c_d  e ")).isEqualTo("%A\\\\B\\%C\\_D E%");
+    assertThat(RoadService.contains("  ")).isNull();
+  }
+}

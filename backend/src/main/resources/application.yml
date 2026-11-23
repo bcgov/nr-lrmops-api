@@ -44,6 +44,9 @@ spring:
     # No session held open across the request: repositories return fully loaded objects.
     open-in-view: false
     properties:
+      # A name search reads all of TFM_ROAD (no index on ROAD_NAME or CLIENT_NAME). Bounded, in
+      # milliseconds, so a slow one fails rather than holding one of the pool's five connections.
+      jakarta.persistence.query.timeout: 30000
       hibernate:
         format_sql: false
         # Rows per round trip to Oracle (the driver's own default is 10). A page of road search
