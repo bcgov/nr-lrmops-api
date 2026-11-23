@@ -84,11 +84,13 @@ class RoadServiceTest {
   }
 
   @Test
-  void tenureTypeFindsActiveAndRetiredOrRetiredOnly() {
-    assertThat(pairs(search(new RoadSearchCriteria(null, null, null, "rp", null))))
-        .containsExactly("R08317/I", "9456/01");
-    assertThat(pairs(search(new RoadSearchCriteria(null, null, null, "retire", null))))
+  void tenureTypeIsAnExactCode() {
+    assertThat(pairs(search(new RoadSearchCriteria(null, null, null, " rp ", null))))
+        .containsExactly("9456/01");
+    assertThat(pairs(search(new RoadSearchCriteria(null, null, null, "rp-retire", null))))
         .containsExactly("R08317/I");
+    assertThat(search(new RoadSearchCriteria(null, null, null, "retire", null)).content())
+        .isEmpty();
   }
 
   @Test
