@@ -4,6 +4,7 @@ import ca.bc.gov.nrs.lrmops.security.ApiScopes;
 import ca.bc.gov.nrs.lrmops.struct.v1.PagedResponse;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchCriteria;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchResult;
+import ca.bc.gov.nrs.lrmops.struct.v1.RoadSectionResponse;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSortColumn;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -14,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
@@ -51,4 +53,23 @@ public interface RoadApiEndpoint {
       @RequestParam(name = "sortBy", required = false) List<RoadSortColumn> sortBy,
       @RequestParam(name = "sortDirection", required = false)
       List<Sort.Direction> sortDirection);
+
+  /**
+   * The road section named by a road id and a section id: whether LRMOPS has it, and its details.
+   *
+   * <p>Gated on {@link ApiScopes#ROADS_READ}. Case-insensitive. 404 when LRMOPS has no such
+   * section, which is the ordinary answer while a user is still typing either half.
+   *
+   * <p>{@code districts} usually has one entry, and two when the section crosses a district
+   * boundary; the caller decides which applies. Retired roads are returned, flagged
+   * {@code retired}; whether to accept one is the caller's decision.
+   */
+  @Operation(summary = "Get a road section",
+      description = "The section's name, tenure type, retired flag, districts and BCTS office;"
+          + " 404 when LRMOPS has no such section. Needs scope lrmops:roads:read.")
+  @PreAuthorize(ApiScopes.ROADS_READ)
+  @GetMapping("/{roadId}/sections/{sectionId}")
+  ResponseEntity<RoadSectionResponse> getRoadSection(
+      @PathVariable("roadId") String roadId,
+      @PathVariable("sectionId") String sectionId);
 }

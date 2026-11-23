@@ -68,4 +68,19 @@ public class TfmRoadEntity {
   /** The tenure holder's name. TFM has no client number. */
   @Column(name = "CLIENT_NAME", length = 60)
   private String clientName;
+
+  /**
+   * The district's org unit number, numbered as CBR numbers them (e.g. {@code 18}, Prince George).
+   * A section crossing a district boundary has a row per district.
+   */
+  @Column(name = "ORG_UNIT_NO")
+  private Long orgUnitNo;
+
+  /** The district's code, e.g. {@code DPG}. */
+  @Column(name = "UNITCODE", length = 10)
+  private String unitCode;
+
+  /** The BC Timber Sales office, e.g. {@code TPG}. Sparse: most roads have none. */
+  @Column(name = "BCTSOFFICE", length = 10)
+  private String bctsOffice;
 }

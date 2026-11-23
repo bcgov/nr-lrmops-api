@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.lrmops.repository.v1;
 
 import ca.bc.gov.nrs.lrmops.model.v1.TfmRoadEntity;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchResult;
+import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -100,4 +101,26 @@ public interface TfmRoadRepository extends JpaRepository<TfmRoadEntity, Long> {
       @Param("tenureType") String tenureType,
       @Param("clientName") String clientName,
       Pageable page);
+
+  /**
+   * Every row that counts for one road section: one per district it crosses, usually one.
+   *
+   * <p>{@code NEWGEOMETRY} rows left out, as in {@link #search}. The road id is matched as given,
+   * so the index on {@code ROAD_ID} is used; the service upper-cases it, which is how LRMOPS
+   * stores road ids. The section id is compared upper-cased on both sides, as it is free text.
+   *
+   * @param roadId the road id, trimmed and upper-cased
+   * @param sectionId the section id, trimmed and upper-cased
+   */
+  @Query("""
+      SELECT road
+        FROM TfmRoadEntity road
+       WHERE road.roadId = :roadId
+         AND UPPER(road.sectionId) = :sectionId
+         AND COALESCE(road.roadStatus, 'OLDGEOMETRY') = 'OLDGEOMETRY'
+       ORDER BY road.orgUnitNo, road.objectId
+      """)
+  List<TfmRoadEntity> findSection(
+      @Param("roadId") String roadId,
+      @Param("sectionId") String sectionId);
 }

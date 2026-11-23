@@ -1,13 +1,24 @@
 package ca.bc.gov.nrs.lrmops.service.v1;
 
+import static ca.bc.gov.nrs.lrmops.util.RoadValues.baseTenureType;
+import static ca.bc.gov.nrs.lrmops.util.RoadValues.collapseSpaces;
+import static ca.bc.gov.nrs.lrmops.util.RoadValues.isRetired;
+
+import ca.bc.gov.nrs.lrmops.exception.RoadSectionNotFoundException;
+import ca.bc.gov.nrs.lrmops.model.v1.TfmRoadEntity;
 import ca.bc.gov.nrs.lrmops.repository.v1.TfmRoadRepository;
+import ca.bc.gov.nrs.lrmops.struct.v1.District;
 import ca.bc.gov.nrs.lrmops.struct.v1.HeaderSort;
 import ca.bc.gov.nrs.lrmops.struct.v1.PagedResponse;
+import ca.bc.gov.nrs.lrmops.struct.v1.RoadSectionResponse;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchCriteria;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchResult;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSortColumn;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
+import java.util.function.Function;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -16,7 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-/** Road search over LRMOPS's {@code TFM_ROAD}. */
+/** Road search and road section lookup over LRMOPS's {@code TFM_ROAD}. */
 @Service
 @Transactional(readOnly = true)
 public class RoadService {
@@ -60,6 +71,57 @@ public class RoadService {
         contains(criteria.tenureType()),
         contains(criteria.clientName()),
         page));
+  }
+
+  /**
+   * The road section named by a road id and a section id.
+   *
+   * <p>Case-insensitive, and surrounding spaces ignored. The section's rows are merged into one:
+   * name, tenure type and BCTS office are taken as {@link #search} takes them ({@code MAX}), so
+   * the two never disagree, and every district is listed.
+   *
+   * @throws RoadSectionNotFoundException if either id is blank, or LRMOPS has no such section
+   */
+  public RoadSectionResponse find(String roadId, String sectionId) {
+    if (!StringUtils.hasText(roadId) || !StringUtils.hasText(sectionId)) {
+      throw new RoadSectionNotFoundException(roadId, sectionId);
+    }
+    List<TfmRoadEntity> rows = roads.findSection(
+        roadId.trim().toUpperCase(Locale.ROOT), sectionId.trim().toUpperCase(Locale.ROOT));
+    if (rows.isEmpty()) {
+      throw new RoadSectionNotFoundException(roadId, sectionId);
+    }
+
+    TfmRoadEntity first = rows.get(0);
+    String tenureType = max(rows, TfmRoadEntity::getRoadTenureType);
+    List<District> districts = rows.stream()
+        .filter(row -> row.getOrgUnitNo() != null || row.getUnitCode() != null)
+        .map(row -> new District(row.getOrgUnitNo(), trimmed(row.getUnitCode())))
+        .distinct()
+        .toList();
+
+    return new RoadSectionResponse(
+        first.getRoadId(),
+        first.getSectionId(),
+        collapseSpaces(max(rows, TfmRoadEntity::getRoadName)),
+        baseTenureType(tenureType),
+        isRetired(tenureType),
+        districts,
+        max(rows, TfmRoadEntity::getBctsOffice));
+  }
+
+  /** The greatest trimmed value of a column across the rows, as SQL's MAX(TRIM(…)); nulls skipped. */
+  private static String max(List<TfmRoadEntity> rows, Function<TfmRoadEntity, String> column) {
+    return rows.stream()
+        .map(column)
+        .map(RoadService::trimmed)
+        .filter(Objects::nonNull)
+        .max(Comparator.naturalOrder())
+        .orElse(null);
+  }
+
+  private static String trimmed(String value) {
+    return value == null ? null : value.trim();
   }
 
   /**

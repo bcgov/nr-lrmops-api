@@ -21,6 +21,7 @@ Interactive docs are at `/swagger-ui/index.html`.
 | Method | Path | Required scope | Description |
 |---|---|---|---|
 | `GET` | `/api/v1/roads` | `lrmops:roads:read` | Search road sections (partial match), one page at a time with the total. |
+| `GET` | `/api/v1/roads/{roadId}/sections/{sectionId}` | `lrmops:roads:read` | One road section (exact match, case-insensitive), or 404. |
 
 ### `GET /api/v1/roads`
 
@@ -48,6 +49,21 @@ left out. Retired roads are included, with `retired: true`.
 }
 ```
 
+### `GET /api/v1/roads/{roadId}/sections/{sectionId}`
+
+Whether LRMOPS has this road section, and its details; **404** when it doesn't. Use it to check a
+road a user has entered. `districts` usually has one entry, and two when the section crosses a
+district boundary.
+
+```json
+{
+  "roadId": "R07571", "sectionId": "AA", "roadName": "BIG CREEK FSR",
+  "tenureType": "FSR", "retired": false,
+  "districts": [ { "orgUnitNo": 18, "code": "DPG" }, { "orgUnitNo": 19, "code": "DMH" } ],
+  "bctsOffice": null
+}
+```
+
 ## Consuming the API — provision your own Keycloak client
 
 This service does **not** hand out credentials. Each consuming team registers its own
@@ -59,7 +75,7 @@ client is yours to do.
 1. **Create a confidential service-account client** in the realm (`serviceAccountsEnabled: true`,
    no browser flows).
 2. **Assign the scopes you need** as **default** client scopes:
-   - `lrmops:roads:read` — road search
+   - `lrmops:roads:read` — road search and road section lookup
    - `lrmops:road-locations:read` — what LRMOPS would assign at a coordinate (not built yet)
    - `lrmops:cbr-sites:read` — LRMOPS's details for a CBR crossing site (not built yet)
 3. **Mint a token** and send it as a bearer token:
