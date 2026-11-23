@@ -41,7 +41,8 @@ public interface RoadApiEndpoint {
    * <p>A page size above 200 is cut to 200; below 1, the default of 15.
    */
   @Operation(summary = "Search road sections",
-      description = "Every criterion is optional and a case-insensitive partial match. One row"
+      description = "Every criterion is optional and a case-insensitive partial match, except"
+          + " tenureType, an exact code from /api/v1/road-tenure-types. One row"
           + " per road and section. Retired roads are included, flagged retired. Needs scope"
           + " lrmops:roads:read.")
   @PreAuthorize(ApiScopes.ROADS_READ)

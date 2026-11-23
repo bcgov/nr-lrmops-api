@@ -67,7 +67,7 @@ public interface TfmRoadRepository extends JpaRepository<TfmRoadEntity, Long> {
                  LIKE :roadName ESCAPE '\\')
          AND (:roadId IS NULL OR UPPER(road.roadId) LIKE :roadId ESCAPE '\\')
          AND (:sectionId IS NULL OR UPPER(road.sectionId) LIKE :sectionId ESCAPE '\\')
-         AND (:tenureType IS NULL OR UPPER(road.roadTenureType) LIKE :tenureType ESCAPE '\\')
+         AND (:tenureType IS NULL OR UPPER(TRIM(road.roadTenureType)) = :tenureType)
          AND (:clientName IS NULL
               OR UPPER(FUNCTION('REGEXP_REPLACE', TRIM(road.clientName), ' {2,}', ' '))
                  LIKE :clientName ESCAPE '\\')
@@ -86,8 +86,7 @@ public interface TfmRoadRepository extends JpaRepository<TfmRoadEntity, Long> {
                          LIKE :roadName ESCAPE '\\')
                  AND (:roadId IS NULL OR UPPER(road.roadId) LIKE :roadId ESCAPE '\\')
                  AND (:sectionId IS NULL OR UPPER(road.sectionId) LIKE :sectionId ESCAPE '\\')
-                 AND (:tenureType IS NULL
-                      OR UPPER(road.roadTenureType) LIKE :tenureType ESCAPE '\\')
+                 AND (:tenureType IS NULL OR UPPER(TRIM(road.roadTenureType)) = :tenureType)
                  AND (:clientName IS NULL
                       OR UPPER(FUNCTION('REGEXP_REPLACE', TRIM(road.clientName), ' {2,}', ' '))
                          LIKE :clientName ESCAPE '\\')

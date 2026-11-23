@@ -14,3 +14,10 @@ CREATE TABLE IF NOT EXISTS tfm.tfm_road (
   unitcode       VARCHAR2(10),
   bctsoffice     VARCHAR2(10)
 );
+
+-- TFM.TFM_VT_ROAD_TENURE_TYPE, the code table behind TFM_ROAD.ROADTENURETYPE: the two columns the
+-- API reads.
+CREATE TABLE IF NOT EXISTS tfm.tfm_vt_road_tenure_type (
+  roadtenuretype VARCHAR2(10) NOT NULL,
+  description    VARCHAR2(100)
+);

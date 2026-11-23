@@ -53,8 +53,9 @@ public class RoadService {
    * Road sections matching the criteria, sorted by the columns asked for and then by road name,
    * road id and section id.
    *
-   * <p>Every criterion is an unanchored, case-insensitive contains; a blank one is dropped, so all
-   * blank returns the first page of everything.
+   * <p>Every criterion but the tenure type is an unanchored, case-insensitive contains; the tenure
+   * type is an exact code ({@code FSR} active only, {@code FSR-RETIRE} retired only). A blank one
+   * is dropped, so all blank returns the first page of everything.
    *
    * @param pageNumber zero-based; a negative one is the first page
    * @param pageSize rows per page, capped at {@value #MAX_PAGE_SIZE}; below 1 is the default
@@ -68,7 +69,7 @@ public class RoadService {
         contains(criteria.roadName()),
         contains(criteria.roadId()),
         contains(criteria.sectionId()),
-        contains(criteria.tenureType()),
+        exact(criteria.tenureType()),
         contains(criteria.clientName()),
         page));
   }
@@ -157,6 +158,11 @@ public class RoadService {
       return DEFAULT_PAGE_SIZE;
     }
     return Math.min(requested, MAX_PAGE_SIZE);
+  }
+
+  /** A code to match exactly: trimmed and upper-cased. Null when blank. */
+  static String exact(String value) {
+    return StringUtils.hasText(value) ? value.trim().toUpperCase(Locale.ROOT) : null;
   }
 
   /**

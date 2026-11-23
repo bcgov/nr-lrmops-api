@@ -22,6 +22,7 @@ Interactive docs are at `/swagger-ui/index.html`.
 |---|---|---|---|
 | `GET` | `/api/v1/roads` | `lrmops:roads:read` | Search road sections (partial match), one page at a time with the total. |
 | `GET` | `/api/v1/roads/{roadId}/sections/{sectionId}` | `lrmops:roads:read` | One road section (exact match, case-insensitive), or 404. |
+| `GET` | `/api/v1/road-tenure-types` | `lrmops:roads:read` | The road tenure types, with descriptions — the values `tenureType` matches exactly. |
 
 ### `GET /api/v1/roads`
 
@@ -32,7 +33,7 @@ Road sections from `TFM.TFM_ROAD`, one row per road and section.
 | `roadName` | `ROAD_NAME`; runs of spaces count as one |
 | `roadId` | `ROAD_ID`, e.g. `R08317` |
 | `sectionId` | `SECTION_ID` |
-| `tenureType` | `ROADTENURETYPE`: `RP`, `FSR`, `SUP`, `CP`, `NSR`, `OTH`; `RETIRE` finds retired roads only |
+| `tenureType` | `ROADTENURETYPE`, **exactly** (case-insensitive) — a code from `/api/v1/road-tenure-types`: `RP` active road permits only, `RP-RETIRE` retired ones |
 | `clientName` | `CLIENT_NAME` |
 | `pageNumber`, `pageSize` | Zero-based page (default `0`); rows per page (default `15`, at most `200`) |
 | `sortBy`, `sortDirection` | `ROAD_NAME`, `ROAD_ID`, `SECTION_ID`, `TENURE_TYPE`, `CLIENT_NAME` with `ASC`/`DESC`; repeat both to sort by several |
@@ -64,6 +65,17 @@ district boundary.
 }
 ```
 
+### `GET /api/v1/road-tenure-types`
+
+Every road tenure type, by code, with its description, from `TFM_VT_ROAD_TENURE_TYPE` — for a
+tenure type filter. Retired variants (`RP-RETIRE`) are included, to filter on retired roads; `!`
+("Geometry only") is left out. In road results a retired road still comes back with its base type
+and `"retired": true`.
+
+```json
+[ { "code": "FSR", "description": "Forest Service Road" }, { "code": "FSR-RETIRE", "description": "FSR (Retired)" } ]
+```
+
 ## Consuming the API — provision your own Keycloak client
 
 This service does **not** hand out credentials. Each consuming team registers its own
@@ -75,7 +87,7 @@ client is yours to do.
 1. **Create a confidential service-account client** in the realm (`serviceAccountsEnabled: true`,
    no browser flows).
 2. **Assign the scopes you need** as **default** client scopes:
-   - `lrmops:roads:read` — road search and road section lookup
+   - `lrmops:roads:read` — road search, road section lookup and road tenure types
    - `lrmops:road-locations:read` — what LRMOPS would assign at a coordinate (not built yet)
    - `lrmops:cbr-sites:read` — LRMOPS's details for a CBR crossing site (not built yet)
 3. **Mint a token** and send it as a bearer token:
