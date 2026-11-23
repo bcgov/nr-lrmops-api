@@ -1,5 +1,5 @@
 -- The columns of LRMOPS's TFM.TFM_ROAD that the API reads, for H2 in tests. The real table is an
--- ArcSDE feature table with 31 columns and no primary key.
+-- ArcSDE feature table with 31 columns and no key on road and section.
 CREATE SCHEMA IF NOT EXISTS tfm;
 
 CREATE TABLE IF NOT EXISTS tfm.tfm_road (
@@ -10,5 +10,7 @@ CREATE TABLE IF NOT EXISTS tfm.tfm_road (
   roadtenuretype VARCHAR2(10),
   roadstatus     VARCHAR2(20),
   client_name    VARCHAR2(60),
-  org_unit_no    NUMBER(10)
+  org_unit_no    NUMBER(10),
+  unitcode       VARCHAR2(10),
+  bctsoffice     VARCHAR2(10)
 );

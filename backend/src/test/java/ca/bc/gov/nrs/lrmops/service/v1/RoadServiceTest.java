@@ -1,11 +1,15 @@
 package ca.bc.gov.nrs.lrmops.service.v1;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ca.bc.gov.nrs.lrmops.exception.RoadSectionNotFoundException;
+import ca.bc.gov.nrs.lrmops.struct.v1.District;
 import ca.bc.gov.nrs.lrmops.struct.v1.HeaderSort;
 import ca.bc.gov.nrs.lrmops.struct.v1.PagedResponse;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchCriteria;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchResult;
+import ca.bc.gov.nrs.lrmops.struct.v1.RoadSectionResponse;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSortColumn;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -17,7 +21,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.jdbc.Sql;
 
-/** Road search through the service and the Hibernate query, on H2 seeded by tfm-road-data.sql. */
+/** Road search and section lookup through the service and the Hibernate query, on H2 seeded by tfm-road-data.sql. */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
@@ -44,7 +48,7 @@ class RoadServiceTest {
 
     // Two-district section once; NEWGEOMETRY-only and section-less rows not at all; no name last.
     assertThat(pairs(page)).containsExactly(
-        "S00100/A", "R08317/I", "R07571/AA", "9456/01", "R00001/B");
+        "S00100/a 1", "R08317/I", "R07571/AA", "9456/01", "R00001/B");
     assertThat(page.totalElements()).isEqualTo(5);
   }
 
@@ -90,9 +94,9 @@ class RoadServiceTest {
   @Test
   void wildcardsInInputMatchLiterally() {
     assertThat(pairs(search(new RoadSearchCriteria("100%", null, null, null, null))))
-        .containsExactly("S00100/A");
+        .containsExactly("S00100/a 1");
     assertThat(pairs(search(new RoadSearchCriteria("N_H", null, null, null, null))))
-        .containsExactly("S00100/A");
+        .containsExactly("S00100/a 1");
     assertThat(search(new RoadSearchCriteria("%", null, null, null, null)).content()).hasSize(1);
     assertThat(search(new RoadSearchCriteria("_", null, null, null, null)).content()).hasSize(1);
   }
@@ -119,7 +123,7 @@ class RoadServiceTest {
 
     // By the stored type, descending: SUP, RP-RETIRE, RP, OTH, FSR.
     assertThat(pairs(page)).containsExactly(
-        "S00100/A", "R08317/I", "9456/01", "R00001/B", "R07571/AA");
+        "S00100/a 1", "R08317/I", "9456/01", "R00001/B", "R07571/AA");
   }
 
   @Test
@@ -160,5 +164,63 @@ class RoadServiceTest {
   void containsEscapesLikeWildcards() {
     assertThat(RoadService.contains(" a\\b%c_d  e ")).isEqualTo("%A\\\\B\\%C\\_D E%");
     assertThat(RoadService.contains("  ")).isNull();
+  }
+
+  @Test
+  void findsASectionWithItsDistrictAndBctsOffice() {
+    assertThat(service.find("R08317", "I")).isEqualTo(new RoadSectionResponse(
+        "R08317", "I", "AM 4", "RP", true, List.of(new District(18L, "DPG")), "TPG"));
+  }
+
+  @Test
+  void aSectionAcrossTwoDistrictsListsBoth() {
+    RoadSectionResponse section = service.find("R07571", "AA");
+
+    assertThat(section.districts())
+        .containsExactly(new District(18L, "DPG"), new District(19L, "DMH"));
+    assertThat(section.roadName()).isEqualTo("BIG CREEK FSR");
+  }
+
+  @Test
+  void anEditInProgressIsTheOldGeometryOnly() {
+    RoadSectionResponse section = service.find("9456", "01");
+
+    assertThat(section.roadName()).isEqualTo("CEDAR ROAD");
+    assertThat(section.districts()).containsExactly(new District(18L, "DPG"));
+  }
+
+  @Test
+  void lookupIgnoresCaseAndSurroundingSpaces() {
+    RoadSectionResponse section = service.find(" s00100 ", " A 1 ");
+
+    // Returned as LRMOPS stores it.
+    assertThat(section.roadId()).isEqualTo("S00100");
+    assertThat(section.sectionId()).isEqualTo("a 1");
+  }
+
+  @Test
+  void aSectionWithNoNameOrDistrictIsStillFound() {
+    RoadSectionResponse section = service.find("R00001", "B");
+
+    assertThat(section.roadName()).isNull();
+    assertThat(section.districts()).isEmpty();
+  }
+
+  @Test
+  void lookupIsExactNotPartial() {
+    assertThatThrownBy(() -> service.find("R07571", "A"))
+        .isInstanceOf(RoadSectionNotFoundException.class);
+    assertThatThrownBy(() -> service.find("R0757", "AA"))
+        .isInstanceOf(RoadSectionNotFoundException.class);
+  }
+
+  @Test
+  void unknownNewGeometryOnlyOrBlankIsNotFound() {
+    assertThatThrownBy(() -> service.find("NOPE", "1"))
+        .isInstanceOf(RoadSectionNotFoundException.class);
+    assertThatThrownBy(() -> service.find("9999", "01"))
+        .isInstanceOf(RoadSectionNotFoundException.class);
+    assertThatThrownBy(() -> service.find(" ", "I"))
+        .isInstanceOf(RoadSectionNotFoundException.class);
   }
 }

@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.lrmops.struct.v1.HeaderSort;
 import ca.bc.gov.nrs.lrmops.struct.v1.PagedResponse;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchCriteria;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchResult;
+import ca.bc.gov.nrs.lrmops.struct.v1.RoadSectionResponse;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSortColumn;
 import java.util.List;
 import org.springframework.data.domain.Sort;
@@ -28,5 +29,10 @@ public class RoadApiController implements RoadApiEndpoint {
       List<Sort.Direction> sortDirection) {
     return ResponseEntity.ok(roadService.search(
         criteria, pageNumber, pageSize, HeaderSort.of(sortBy, sortDirection)));
+  }
+
+  @Override
+  public ResponseEntity<RoadSectionResponse> getRoadSection(String roadId, String sectionId) {
+    return ResponseEntity.ok(roadService.find(roadId, sectionId));
   }
 }

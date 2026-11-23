@@ -15,7 +15,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** GET /api/v1/roads end to end: scope, parameters, and the JSON returned. */
+/** GET /api/v1/roads and /api/v1/roads/{roadId}/sections/{sectionId} end to end: scope, parameters, and the JSON returned. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -83,5 +83,43 @@ class RoadApiControllerTest {
   void rejectsAnUnknownSortColumn() throws Exception {
     mvc.perform(get("/api/v1/roads").param("sortBy", "NOPE").with(roadsRead()))
         .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void getsARoadSection() throws Exception {
+    mvc.perform(get("/api/v1/roads/R07571/sections/AA").with(roadsRead()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.roadId").value("R07571"))
+        .andExpect(jsonPath("$.sectionId").value("AA"))
+        .andExpect(jsonPath("$.roadName").value("BIG CREEK FSR"))
+        .andExpect(jsonPath("$.tenureType").value("FSR"))
+        .andExpect(jsonPath("$.retired").value(false))
+        .andExpect(jsonPath("$.districts.length()").value(2))
+        .andExpect(jsonPath("$.districts[0].orgUnitNo").value(18))
+        .andExpect(jsonPath("$.districts[0].code").value("DPG"))
+        .andExpect(jsonPath("$.bctsOffice").doesNotExist());
+  }
+
+  @Test
+  void aSectionIdWithASpaceIsFound() throws Exception {
+    // Encoded as a%201 in the path.
+    mvc.perform(get("/api/v1/roads/{roadId}/sections/{sectionId}", "S00100", "a 1")
+            .with(roadsRead()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.sectionId").value("a 1"));
+  }
+
+  @Test
+  void anUnknownSectionIsA404() throws Exception {
+    mvc.perform(get("/api/v1/roads/R07571/sections/ZZ").with(roadsRead()))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.detail").value("No road section R07571-ZZ was found."));
+  }
+
+  @Test
+  void theSectionLookupNeedsTheRoadsScope() throws Exception {
+    mvc.perform(get("/api/v1/roads/R07571/sections/AA")).andExpect(status().isUnauthorized());
+    mvc.perform(get("/api/v1/roads/R07571/sections/AA").with(jwt()))
+        .andExpect(status().isForbidden());
   }
 }
