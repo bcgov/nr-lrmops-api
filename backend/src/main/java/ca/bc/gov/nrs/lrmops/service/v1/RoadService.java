@@ -14,11 +14,15 @@ import ca.bc.gov.nrs.lrmops.struct.v1.RoadSectionResponse;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchCriteria;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchResult;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSortColumn;
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -78,8 +82,8 @@ public class RoadService {
    * The road section named by a road id and a section id.
    *
    * <p>Case-insensitive, and surrounding spaces ignored. The section's rows are merged into one:
-   * name, tenure type and BCTS office are taken as {@link #search} takes them ({@code MAX}), so
-   * the two never disagree, and every district is listed.
+   * name, tenure type, BCTS office and client are taken as {@link #search} takes them
+   * ({@code MAX}), so the two never disagree, and every district is listed.
    *
    * @throws RoadSectionNotFoundException if either id is blank, or LRMOPS has no such section
    */
@@ -95,10 +99,17 @@ public class RoadService {
 
     TfmRoadEntity first = rows.get(0);
     String tenureType = max(rows, TfmRoadEntity::getRoadTenureType);
-    List<District> districts = rows.stream()
+    // One entry per district, in the rows' order, with the lengths of its rows added up.
+    Map<List<Object>, List<TfmRoadEntity>> byDistrict = rows.stream()
         .filter(row -> row.getOrgUnitNo() != null || row.getUnitCode() != null)
-        .map(row -> new District(row.getOrgUnitNo(), trimmed(row.getUnitCode())))
-        .distinct()
+        .collect(Collectors.groupingBy(
+            row -> Arrays.asList(row.getOrgUnitNo(), trimmed(row.getUnitCode())),
+            LinkedHashMap::new, Collectors.toList()));
+    List<District> districts = byDistrict.values().stream()
+        .map(inDistrict -> new District(
+            inDistrict.get(0).getOrgUnitNo(),
+            trimmed(inDistrict.get(0).getUnitCode()),
+            totalLength(inDistrict)))
         .toList();
 
     return new RoadSectionResponse(
@@ -108,7 +119,17 @@ public class RoadService {
         baseTenureType(tenureType),
         isRetired(tenureType),
         districts,
-        max(rows, TfmRoadEntity::getBctsOffice));
+        max(rows, TfmRoadEntity::getBctsOffice),
+        collapseSpaces(max(rows, TfmRoadEntity::getClientName)));
+  }
+
+  /** The rows' lengths added up, in metres; null when none of them records one. */
+  private static Double totalLength(List<TfmRoadEntity> rows) {
+    List<Double> lengths = rows.stream()
+        .map(TfmRoadEntity::getRoadLength)
+        .filter(Objects::nonNull)
+        .toList();
+    return lengths.isEmpty() ? null : lengths.stream().mapToDouble(Double::doubleValue).sum();
   }
 
   /** The greatest trimmed value of a column across the rows, as SQL's MAX(TRIM(…)); nulls skipped. */

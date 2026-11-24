@@ -54,14 +54,14 @@ left out. Retired roads are included, with `retired: true`.
 
 Whether LRMOPS has this road section, and its details; **404** when it doesn't. Use it to check a
 road a user has entered. `districts` usually has one entry, and two when the section crosses a
-district boundary.
+district boundary; `lengthMetres` is how much of the section lies in each.
 
 ```json
 {
   "roadId": "R07571", "sectionId": "AA", "roadName": "BIG CREEK FSR",
   "tenureType": "FSR", "retired": false,
-  "districts": [ { "orgUnitNo": 18, "code": "DPG" }, { "orgUnitNo": 19, "code": "DMH" } ],
-  "bctsOffice": null
+  "districts": [ { "orgUnitNo": 18, "code": "DPG", "lengthMetres": 774 }, { "orgUnitNo": 50, "code": "DQU", "lengthMetres": 629 } ],
+  "bctsOffice": null, "clientName": null
 }
 ```
 

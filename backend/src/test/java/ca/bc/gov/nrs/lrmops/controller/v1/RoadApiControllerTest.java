@@ -97,7 +97,9 @@ class RoadApiControllerTest {
         .andExpect(jsonPath("$.districts.length()").value(2))
         .andExpect(jsonPath("$.districts[0].orgUnitNo").value(18))
         .andExpect(jsonPath("$.districts[0].code").value("DPG"))
-        .andExpect(jsonPath("$.bctsOffice").doesNotExist());
+        .andExpect(jsonPath("$.districts[0].lengthMetres").value(629.0))
+        .andExpect(jsonPath("$.bctsOffice").doesNotExist())
+        .andExpect(jsonPath("$.clientName").doesNotExist());
   }
 
   @Test

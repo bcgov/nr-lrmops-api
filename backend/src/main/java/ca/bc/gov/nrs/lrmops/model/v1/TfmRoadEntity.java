@@ -83,4 +83,11 @@ public class TfmRoadEntity {
   /** The BC Timber Sales office, e.g. {@code TPG}. Sparse: most roads have none. */
   @Column(name = "BCTSOFFICE", length = 10)
   private String bctsOffice;
+
+  /**
+   * This row's length in metres. A section crossing a district boundary has a row per district, so
+   * this is the part of the section in the row's district (R07571 / AA: 774 m in DPG, 629 m in DQU).
+   */
+  @Column(name = "ROADLENGTH")
+  private Double roadLength;
 }

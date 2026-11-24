@@ -14,6 +14,8 @@ import java.util.List;
  *     when the section crosses a district boundary</b>, and the caller decides which applies.
  *     Empty when LRMOPS records none
  * @param bctsOffice the BC Timber Sales office, e.g. {@code TPG}; null for most roads
+ * @param clientName the tenure holder's name, as the road search returns it; null when LRMOPS has
+ *     none
  */
 public record RoadSectionResponse(
     String roadId,
@@ -22,6 +24,7 @@ public record RoadSectionResponse(
     String tenureType,
     boolean retired,
     List<District> districts,
-    String bctsOffice
+    String bctsOffice,
+    String clientName
 ) {
 }
