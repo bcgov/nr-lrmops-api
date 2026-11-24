@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS tfm.tfm_road (
   client_name    VARCHAR2(60),
   org_unit_no    NUMBER(10),
   unitcode       VARCHAR2(10),
-  bctsoffice     VARCHAR2(10)
+  bctsoffice     VARCHAR2(10),
+  roadlength     NUMBER
 );
 
 -- TFM.TFM_VT_ROAD_TENURE_TYPE, the code table behind TFM_ROAD.ROADTENURETYPE: the two columns the

@@ -171,7 +171,7 @@ class RoadServiceTest {
   @Test
   void findsASectionWithItsDistrictAndBctsOffice() {
     assertThat(service.find("R08317", "I")).isEqualTo(new RoadSectionResponse(
-        "R08317", "I", "AM 4", "RP", true, List.of(new District(18L, "DPG")), "TPG"));
+        "R08317", "I", "AM 4", "RP", true, List.of(new District(18L, "DPG", 1500.0)), "TPG", "CANFOR"));
   }
 
   @Test
@@ -179,7 +179,7 @@ class RoadServiceTest {
     RoadSectionResponse section = service.find("R07571", "AA");
 
     assertThat(section.districts())
-        .containsExactly(new District(18L, "DPG"), new District(19L, "DMH"));
+        .containsExactly(new District(18L, "DPG", 629.0), new District(19L, "DMH", 774.0));
     assertThat(section.roadName()).isEqualTo("BIG CREEK FSR");
   }
 
@@ -188,7 +188,7 @@ class RoadServiceTest {
     RoadSectionResponse section = service.find("9456", "01");
 
     assertThat(section.roadName()).isEqualTo("CEDAR ROAD");
-    assertThat(section.districts()).containsExactly(new District(18L, "DPG"));
+    assertThat(section.districts()).containsExactly(new District(18L, "DPG", 2000.0));
   }
 
   @Test
