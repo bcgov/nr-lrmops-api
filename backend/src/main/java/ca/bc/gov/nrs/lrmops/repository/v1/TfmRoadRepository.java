@@ -2,6 +2,8 @@ package ca.bc.gov.nrs.lrmops.repository.v1;
 
 import ca.bc.gov.nrs.lrmops.model.v1.TfmRoadEntity;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchResult;
+import ca.bc.gov.nrs.lrmops.struct.v1.RoadSectionKey;
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -122,4 +124,74 @@ public interface TfmRoadRepository extends JpaRepository<TfmRoadEntity, Long> {
   List<TfmRoadEntity> findSection(
       @Param("roadId") String roadId,
       @Param("sectionId") String sectionId);
+
+  /**
+   * Distinct road names containing a pattern, for a pick list: names starting with it first, then
+   * alphabetically, at most {@code limit}.
+   *
+   * <p>Names as {@link #search} returns them: trimmed, runs of spaces collapsed. Only rows
+   * {@link #search} counts. No index on {@code ROAD_NAME}, so this reads the whole table; the
+   * {@code DISTINCT} and the sort are over the names that matched, not the table.
+   *
+   * @param pattern {@code %…%}, upper-cased and escaped
+   * @param prefix {@code …%}, the same text, to rank names starting with it first
+   */
+  @Query(nativeQuery = true, value = """
+      SELECT name
+        FROM (SELECT DISTINCT REGEXP_REPLACE(TRIM(road.ROAD_NAME), ' {2,}', ' ') AS name
+                FROM TFM.TFM_ROAD road
+               WHERE COALESCE(road.ROADSTATUS, 'OLDGEOMETRY') = 'OLDGEOMETRY'
+                 AND road.ROAD_ID IS NOT NULL
+                 AND road.SECTION_ID IS NOT NULL
+                 AND UPPER(REGEXP_REPLACE(TRIM(road.ROAD_NAME), ' {2,}', ' '))
+                     LIKE :pattern ESCAPE '\\')
+       ORDER BY CASE WHEN UPPER(name) LIKE :prefix ESCAPE '\\' THEN 0 ELSE 1 END, name
+       FETCH FIRST :limit ROWS ONLY
+      """)
+  List<String> findNames(
+      @Param("pattern") String pattern,
+      @Param("prefix") String prefix,
+      @Param("limit") int limit);
+
+  /**
+   * Every road section with exactly this name: case-insensitive, runs of spaces counting as one.
+   * Only rows {@link #search} counts. Reads the whole table, as there is no index on the name.
+   *
+   * @param roadName trimmed, collapsed and upper-cased
+   */
+  @Query("""
+      SELECT new ca.bc.gov.nrs.lrmops.struct.v1.RoadSectionKey(road.roadId, road.sectionId)
+        FROM TfmRoadEntity road
+       WHERE COALESCE(road.roadStatus, 'OLDGEOMETRY') = 'OLDGEOMETRY'
+         AND road.roadId IS NOT NULL
+         AND road.sectionId IS NOT NULL
+         AND UPPER(FUNCTION('REGEXP_REPLACE', TRIM(road.roadName), ' {2,}', ' ')) = :roadName
+       GROUP BY road.roadId, road.sectionId
+       ORDER BY road.roadId, road.sectionId
+      """)
+  List<RoadSectionKey> findSectionsNamed(@Param("roadName") String roadName);
+
+  /**
+   * Every section of the given roads, one row each, as {@link #search} returns them. The caller
+   * keeps the sections it asked for.
+   *
+   * <p>By road id, so the index on {@code ROAD_ID} is used; a road has a handful of sections, so
+   * the extra rows cost little. At most 1,000 ids: Oracle's limit on an {@code IN} list.
+   *
+   * @param roadIds trimmed and upper-cased, as LRMOPS stores road ids
+   */
+  @Query("""
+      SELECT new ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchResult(
+               road.roadId,
+               road.sectionId,
+               MAX(TRIM(road.roadName)),
+               MAX(TRIM(road.roadTenureType)),
+               MAX(TRIM(road.clientName)))
+        FROM TfmRoadEntity road
+       WHERE road.roadId IN :roadIds
+         AND road.sectionId IS NOT NULL
+         AND COALESCE(road.roadStatus, 'OLDGEOMETRY') = 'OLDGEOMETRY'
+       GROUP BY road.roadId, road.sectionId
+      """)
+  List<RoadSearchResult> findSectionsOfRoads(@Param("roadIds") Collection<String> roadIds);
 }

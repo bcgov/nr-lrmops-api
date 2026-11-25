@@ -9,6 +9,7 @@ import ca.bc.gov.nrs.lrmops.struct.v1.HeaderSort;
 import ca.bc.gov.nrs.lrmops.struct.v1.PagedResponse;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchCriteria;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchResult;
+import ca.bc.gov.nrs.lrmops.struct.v1.RoadSectionKey;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSectionResponse;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSortColumn;
 import java.util.List;
@@ -33,6 +34,9 @@ class RoadServiceTest {
 
   @Autowired
   private RoadService service;
+
+  @Autowired
+  private jakarta.persistence.EntityManager entityManager;
 
   private PagedResponse<RoadSearchResult> search(RoadSearchCriteria criteria) {
     return service.search(criteria, 0, 50, List.of());
@@ -224,5 +228,71 @@ class RoadServiceTest {
         .isInstanceOf(RoadSectionNotFoundException.class);
     assertThatThrownBy(() -> service.find(" ", "I"))
         .isInstanceOf(RoadSectionNotFoundException.class);
+  }
+
+  // ── Road names, sections by name, lookup ──────────────────────────
+
+  @Test
+  void namesContainingTheTermStartingWithItFirst() {
+    // Both contain "CE"; CEDAR ROAD starts with it. NEWGEOMETRY's CEDAR ROAD NEW is left out.
+    assertThat(service.names("ce", 20)).containsExactly("CEDAR ROAD");
+    assertThat(service.names("r", 20)).isEmpty();
+    assertThat(service.names("o", 20)).isEmpty();
+    assertThat(service.names("RO", 20)).containsExactly("CEDAR ROAD");
+  }
+
+  @Test
+  void namesAreCollapsedDistinctAndLimited() {
+    assertThat(service.names("  am   4", 20)).containsExactly("AM 4");
+    // BIG CREEK FSR has two rows, one per district: listed once.
+    assertThat(service.names("CREEK", 20)).containsExactly("BIG CREEK FSR");
+    assertThat(service.names("% D", 20)).containsExactly("100% DOWN_HILL");
+    assertThat(service.names("_", 20)).isEmpty();
+    assertThat(service.names("A", 20)).isEmpty();
+  }
+
+  @Test
+  void namesStartingWithTheTermComeFirst() {
+    // Contains "CE" and sorts before CEDAR ROAD, but doesn't start with "CE".
+    entityManager.createNativeQuery("INSERT INTO tfm.tfm_road VALUES"
+        + " (10, 'R00003', 'A', 'ACE ROAD', 'RP', NULL, NULL, 18, 'DPG', NULL, 10)")
+        .executeUpdate();
+
+    assertThat(service.names("CE", 20)).containsExactly("CEDAR ROAD", "ACE ROAD");
+    assertThat(service.names("CE", 1)).containsExactly("CEDAR ROAD");
+  }
+
+  @Test
+  void sectionsNamedExactlyIgnoringCaseAndSpaces() {
+    assertThat(service.sectionsNamed(" big  creek fsr "))
+        .containsExactly(new RoadSectionKey("R07571", "AA"));
+    assertThat(service.sectionsNamed("am 4")).containsExactly(new RoadSectionKey("R08317", "I"));
+    assertThat(service.sectionsNamed("BIG CREEK")).isEmpty();
+    assertThat(service.sectionsNamed("CEDAR ROAD NEW")).isEmpty();
+    assertThat(service.sectionsNamed("  ")).isEmpty();
+  }
+
+  @Test
+  void looksUpTheSectionsAskedForOnly() {
+    List<RoadSearchResult> found = service.lookUp(List.of(
+        new RoadSectionKey("r08317", " i "),
+        new RoadSectionKey("R07571", "AA"),
+        new RoadSectionKey("S00100", "A 1"),
+        new RoadSectionKey("R07571", "ZZ"),
+        new RoadSectionKey("9999", "01"),
+        new RoadSectionKey(null, "01")));
+
+    assertThat(found).extracting(r -> r.roadId() + "/" + r.sectionId() + "=" + r.roadName())
+        .containsExactlyInAnyOrder("R08317/I=AM 4", "R07571/AA=BIG CREEK FSR",
+            "S00100/a 1=100% DOWN_HILL");
+    assertThat(service.lookUp(List.of())).isEmpty();
+  }
+
+  @Test
+  void refusesTooManySectionsAtOnce() {
+    List<RoadSectionKey> many = java.util.stream.IntStream.rangeClosed(0, RoadService.MAX_LOOKUP)
+        .mapToObj(i -> new RoadSectionKey("R" + i, "A")).toList();
+
+    assertThatThrownBy(() -> service.lookUp(many)).isInstanceOf(IllegalArgumentException.class);
   }
 }
