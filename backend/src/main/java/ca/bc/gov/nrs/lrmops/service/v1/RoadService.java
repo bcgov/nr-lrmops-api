@@ -10,17 +10,20 @@ import ca.bc.gov.nrs.lrmops.repository.v1.TfmRoadRepository;
 import ca.bc.gov.nrs.lrmops.struct.v1.District;
 import ca.bc.gov.nrs.lrmops.struct.v1.HeaderSort;
 import ca.bc.gov.nrs.lrmops.struct.v1.PagedResponse;
+import ca.bc.gov.nrs.lrmops.struct.v1.RoadSectionKey;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSectionResponse;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchCriteria;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchResult;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSortColumn;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
@@ -41,6 +44,21 @@ public class RoadService {
 
   /** For a caller that does not say. */
   static final int DEFAULT_PAGE_SIZE = 15;
+
+  /** Road names returned for a pick list, at most. */
+  static final int MAX_NAMES = 50;
+
+  /** Road names returned for a pick list when the caller does not say. */
+  static final int DEFAULT_NAMES = 20;
+
+  /** Fewer characters than this match too many names to be worth a pick list. */
+  static final int MIN_NAME_TERM = 2;
+
+  /**
+   * Sections one lookup may ask for: Oracle's limit on an {@code IN} list, as the lookup asks by
+   * road id and there is at most one road id per section.
+   */
+  public static final int MAX_LOOKUP = 1000;
 
   private static final String WILDCARD = "%";
 
@@ -121,6 +139,77 @@ public class RoadService {
         districts,
         max(rows, TfmRoadEntity::getBctsOffice),
         collapseSpaces(max(rows, TfmRoadEntity::getClientName)));
+  }
+
+  /**
+   * Road names containing {@code term}, for a pick list: names starting with it first, then
+   * alphabetically. Case-insensitive; runs of spaces count as one.
+   *
+   * @param limit names returned, at most {@value #MAX_NAMES}; below 1 is {@value #DEFAULT_NAMES}
+   * @return none when the term has fewer than {@value #MIN_NAME_TERM} characters
+   */
+  public List<String> names(String term, int limit) {
+    String text = normalizedName(term);
+    if (text == null || text.length() < MIN_NAME_TERM) {
+      return List.of();
+    }
+    String escaped = escapeLike(text);
+    int bounded = limit < 1 ? DEFAULT_NAMES : Math.min(limit, MAX_NAMES);
+    return roads.findNames(WILDCARD + escaped + WILDCARD, escaped + WILDCARD, bounded);
+  }
+
+  /**
+   * Every road section named exactly {@code roadName}: case-insensitive, surrounding spaces
+   * ignored, runs of spaces counting as one. None when blank.
+   */
+  public List<RoadSectionKey> sectionsNamed(String roadName) {
+    String name = normalizedName(roadName);
+    return name == null ? List.of() : roads.findSectionsNamed(name);
+  }
+
+  /**
+   * The road sections asked for, as {@link #search} returns them, in no particular order. One
+   * that LRMOPS does not have is left out, as is a key missing either half.
+   *
+   * <p>Matched as {@link #find} matches: case-insensitive, surrounding spaces ignored.
+   *
+   * @throws IllegalArgumentException if more than {@value #MAX_LOOKUP} are asked for
+   */
+  public List<RoadSearchResult> lookUp(Collection<RoadSectionKey> keys) {
+    if (keys.size() > MAX_LOOKUP) {
+      throw new IllegalArgumentException(
+          "At most " + MAX_LOOKUP + " road sections can be looked up at once");
+    }
+    Set<List<String>> wanted = keys.stream()
+        .filter(key -> key != null
+            && StringUtils.hasText(key.roadId()) && StringUtils.hasText(key.sectionId()))
+        .map(key -> keyOf(key.roadId(), key.sectionId()))
+        .collect(Collectors.toSet());
+    if (wanted.isEmpty()) {
+      return List.of();
+    }
+    Set<String> roadIds = wanted.stream().map(key -> key.get(0)).collect(Collectors.toSet());
+    return roads.findSectionsOfRoads(roadIds).stream()
+        .filter(road -> wanted.contains(keyOf(road.roadId(), road.sectionId())))
+        .toList();
+  }
+
+  /** A section's key for matching: both halves trimmed and upper-cased. */
+  private static List<String> keyOf(String roadId, String sectionId) {
+    return List.of(roadId.trim().toUpperCase(Locale.ROOT),
+        sectionId.trim().toUpperCase(Locale.ROOT));
+  }
+
+  /** A name as the queries compare it: trimmed, runs of spaces collapsed, upper-cased. */
+  private static String normalizedName(String value) {
+    return StringUtils.hasText(value)
+        ? value.trim().replaceAll(" {2,}", " ").toUpperCase(Locale.ROOT)
+        : null;
+  }
+
+  /** {@code %}, {@code _} and {@code \} escaped, so they match literally in a {@code LIKE}. */
+  private static String escapeLike(String value) {
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
   }
 
   /** The rows' lengths added up, in metres; null when none of them records one. */

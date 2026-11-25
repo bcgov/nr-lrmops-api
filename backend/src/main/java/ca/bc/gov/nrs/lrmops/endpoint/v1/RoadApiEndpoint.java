@@ -4,6 +4,7 @@ import ca.bc.gov.nrs.lrmops.security.ApiScopes;
 import ca.bc.gov.nrs.lrmops.struct.v1.PagedResponse;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchCriteria;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchResult;
+import ca.bc.gov.nrs.lrmops.struct.v1.RoadSectionKey;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSectionResponse;
 import ca.bc.gov.nrs.lrmops.struct.v1.RoadSortColumn;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,6 +17,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
@@ -73,4 +76,51 @@ public interface RoadApiEndpoint {
   ResponseEntity<RoadSectionResponse> getRoadSection(
       @PathVariable("roadId") String roadId,
       @PathVariable("sectionId") String sectionId);
+
+  /**
+   * Road names containing the term, for a pick list: names starting with it first, then
+   * alphabetically.
+   *
+   * <p>Gated on {@link ApiScopes#ROADS_READ}. Case-insensitive; runs of spaces count as one. An
+   * empty list for a term under two characters. {@code limit} is cut to 50; below 1, 20.
+   */
+  @Operation(summary = "Road names for a pick list",
+      description = "Distinct names containing the term (at least 2 characters), those starting"
+          + " with it first. Needs scope lrmops:roads:read.")
+  @PreAuthorize(ApiScopes.ROADS_READ)
+  @GetMapping("/names")
+  ResponseEntity<List<String>> getRoadNames(
+      @RequestParam(name = "search", defaultValue = "") String search,
+      @RequestParam(name = "limit", defaultValue = "20") int limit);
+
+  /**
+   * Every road section with exactly this name, for a caller that filters its own records by road
+   * name.
+   *
+   * <p>Gated on {@link ApiScopes#ROADS_READ}. Case-insensitive; surrounding spaces ignored, runs
+   * of spaces counting as one. Empty for a blank name or one LRMOPS does not have.
+   */
+  @Operation(summary = "Road sections with a name",
+      description = "Road and section ids of every section named exactly roadName"
+          + " (case-insensitive). Needs scope lrmops:roads:read.")
+  @PreAuthorize(ApiScopes.ROADS_READ)
+  @GetMapping("/sections")
+  ResponseEntity<List<RoadSectionKey>> getRoadSectionsNamed(
+      @RequestParam(name = "roadName", defaultValue = "") String roadName);
+
+  /**
+   * Many road sections at once, by road id and section id: their names, tenure types and clients,
+   * for a caller showing a list of its own records with their roads.
+   *
+   * <p>Gated on {@link ApiScopes#ROADS_READ}. A POST because the keys are free text and many: at
+   * most 1,000 a request, more is a 400. Matched case-insensitively; a section LRMOPS does not
+   * have is left out of the answer, so the caller can tell it from one without a name.
+   */
+  @Operation(summary = "Look up road sections",
+      description = "Up to 1000 {roadId, sectionId} keys in; the sections LRMOPS has out, as the"
+          + " road search returns them. Needs scope lrmops:roads:read.")
+  @PreAuthorize(ApiScopes.ROADS_READ)
+  @PostMapping("/sections/lookup")
+  ResponseEntity<List<RoadSearchResult>> lookUpRoadSections(
+      @RequestBody List<RoadSectionKey> keys);
 }

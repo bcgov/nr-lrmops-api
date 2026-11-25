@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.lrmops.controller.v1;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor;
 import org.springframework.test.context.ActiveProfiles;
@@ -123,5 +125,52 @@ class RoadApiControllerTest {
     mvc.perform(get("/api/v1/roads/R07571/sections/AA")).andExpect(status().isUnauthorized());
     mvc.perform(get("/api/v1/roads/R07571/sections/AA").with(jwt()))
         .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void roadNamesForAPickList() throws Exception {
+    mvc.perform(get("/api/v1/roads/names").param("search", "creek").with(roadsRead()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0]").value("BIG CREEK FSR"));
+    mvc.perform(get("/api/v1/roads/names").param("search", "creek").with(jwt()))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void sectionsWithAName() throws Exception {
+    mvc.perform(get("/api/v1/roads/sections").param("roadName", "big creek fsr")
+            .with(roadsRead()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].roadId").value("R07571"))
+        .andExpect(jsonPath("$[0].sectionId").value("AA"));
+  }
+
+  @Test
+  void looksUpManySections() throws Exception {
+    mvc.perform(post("/api/v1/roads/sections/lookup")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("[{\"roadId\":\"R08317\",\"sectionId\":\"I\"},"
+                + "{\"roadId\":\"NOPE\",\"sectionId\":\"X\"}]")
+            .with(roadsRead()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].roadName").value("AM 4"))
+        .andExpect(jsonPath("$[0].retired").value(true));
+  }
+
+  @Test
+  void refusesTooManySectionsAtOnce() throws Exception {
+    StringBuilder body = new StringBuilder("[");
+    for (int i = 0; i <= 1000; i++) {
+      body.append(i == 0 ? "" : ",").append("{\"roadId\":\"R").append(i)
+          .append("\",\"sectionId\":\"A\"}");
+    }
+    mvc.perform(post("/api/v1/roads/sections/lookup")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(body.append("]").toString())
+            .with(roadsRead()))
+        .andExpect(status().isBadRequest());
   }
 }
