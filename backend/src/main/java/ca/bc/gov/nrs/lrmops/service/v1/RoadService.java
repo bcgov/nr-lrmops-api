@@ -6,6 +6,7 @@ import static ca.bc.gov.nrs.lrmops.util.RoadValues.isRetired;
 
 import ca.bc.gov.nrs.lrmops.exception.RoadSectionNotFoundException;
 import ca.bc.gov.nrs.lrmops.model.v1.TfmRoadEntity;
+import ca.bc.gov.nrs.lrmops.repository.v1.RoadSectionDistrictRow;
 import ca.bc.gov.nrs.lrmops.repository.v1.TfmRoadRepository;
 import ca.bc.gov.nrs.lrmops.struct.v1.District;
 import ca.bc.gov.nrs.lrmops.struct.v1.HeaderSort;
@@ -75,9 +76,13 @@ public class RoadService {
    * Road sections matching the criteria, sorted by the columns asked for and then by road name,
    * road id and section id.
    *
-   * <p>Every criterion but the tenure type is an unanchored, case-insensitive contains; the tenure
-   * type is an exact code ({@code FSR} active only, {@code FSR-RETIRE} retired only). A blank one
-   * is dropped, so all blank returns the first page of everything.
+   * <p>Every criterion but the tenure type and the district is an unanchored, case-insensitive
+   * contains; the tenure type is an exact code ({@code FSR} active only, {@code FSR-RETIRE} retired
+   * only), the district an org unit number. A blank one is dropped, so all blank returns the first
+   * page of everything.
+   *
+   * <p>The page's districts are read after it, by its road ids — indexed, a page at most
+   * {@value #MAX_PAGE_SIZE} sections.
    *
    * @param pageNumber zero-based; a negative one is the first page
    * @param pageSize rows per page, capped at {@value #MAX_PAGE_SIZE}; below 1 is the default
@@ -87,13 +92,20 @@ public class RoadService {
       int pageSize, List<HeaderSort<RoadSortColumn>> sort) {
     PageRequest page = PageRequest.of(
         Math.max(pageNumber, 0), boundedPageSize(pageSize), order(sort));
-    return paged(roads.search(
+    Page<RoadSearchResult> found = roads.search(
         contains(criteria.roadName()),
         contains(criteria.roadId()),
         contains(criteria.sectionId()),
         exact(criteria.tenureType()),
-        contains(criteria.clientName()),
-        page));
+        criteria.district(),
+        page);
+    if (found.isEmpty()) {
+      return paged(found);
+    }
+    Map<List<String>, List<RoadSectionDistrictRow>> rows = sectionRows(found.getContent().stream()
+        .map(RoadSearchResult::roadId).collect(Collectors.toSet()));
+    return paged(found.map(road -> road.withDistricts(
+        districtCodes(rows.getOrDefault(keyOf(road.roadId(), road.sectionId()), List.of())))));
   }
 
   /**
@@ -189,9 +201,31 @@ public class RoadService {
       return List.of();
     }
     Set<String> roadIds = wanted.stream().map(key -> key.get(0)).collect(Collectors.toSet());
-    return roads.findSectionsOfRoads(roadIds).stream()
-        .filter(road -> wanted.contains(keyOf(road.roadId(), road.sectionId())))
+    return sectionRows(roadIds).entrySet().stream()
+        .filter(section -> wanted.contains(section.getKey()))
+        .map(section -> merged(section.getValue()))
         .toList();
+  }
+
+  /** The given roads' sections, each section's rows (a row per district) under its key. */
+  private Map<List<String>, List<RoadSectionDistrictRow>> sectionRows(Set<String> roadIds) {
+    return roads.findSectionsOfRoads(roadIds).stream().collect(Collectors.groupingBy(
+        row -> keyOf(row.roadId(), row.sectionId()), LinkedHashMap::new, Collectors.toList()));
+  }
+
+  /** One section from its rows: name and tenure type by {@code MAX}, as the search takes them. */
+  private static RoadSearchResult merged(List<RoadSectionDistrictRow> rows) {
+    RoadSectionDistrictRow first = rows.get(0);
+    return new RoadSearchResult(first.roadId(), first.sectionId(),
+        max(rows, RoadSectionDistrictRow::storedRoadName),
+        max(rows, RoadSectionDistrictRow::storedTenureType))
+        .withDistricts(districtCodes(rows));
+  }
+
+  /** The rows' district codes, each once, alphabetically; blanks left out. */
+  private static List<String> districtCodes(List<RoadSectionDistrictRow> rows) {
+    return rows.stream().map(RoadSectionDistrictRow::districtCode)
+        .filter(StringUtils::hasText).distinct().sorted().toList();
   }
 
   /** A section's key for matching: both halves trimmed and upper-cased. */
@@ -222,7 +256,7 @@ public class RoadService {
   }
 
   /** The greatest trimmed value of a column across the rows, as SQL's MAX(TRIM(…)); nulls skipped. */
-  private static String max(List<TfmRoadEntity> rows, Function<TfmRoadEntity, String> column) {
+  private static <R> String max(List<R> rows, Function<R, String> column) {
     return rows.stream()
         .map(column)
         .map(RoadService::trimmed)
@@ -259,7 +293,7 @@ public class RoadService {
       case ROAD_ID -> "road.roadId";
       case SECTION_ID -> "road.sectionId";
       case TENURE_TYPE -> "MAX(TRIM(road.roadTenureType))";
-      case CLIENT_NAME -> "MAX(TRIM(road.clientName))";
+      case DISTRICT -> "MIN(TRIM(road.unitCode))";
     };
   }
 

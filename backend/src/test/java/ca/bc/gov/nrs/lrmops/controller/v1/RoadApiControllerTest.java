@@ -68,7 +68,17 @@ class RoadApiControllerTest {
         .andExpect(jsonPath("$.content[0].roadName").value("AM 4"))
         .andExpect(jsonPath("$.content[0].tenureType").value("RP"))
         .andExpect(jsonPath("$.content[0].retired").value(true))
-        .andExpect(jsonPath("$.content[0].clientName").value("CANFOR"));
+        .andExpect(jsonPath("$.content[0].districts[0]").value("DPG"))
+        .andExpect(jsonPath("$.content[0].clientName").doesNotExist());
+  }
+
+  @Test
+  void bindsTheDistrict() throws Exception {
+    mvc.perform(get("/api/v1/roads").param("district", "19").with(roadsRead()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.totalElements").value(1))
+        .andExpect(jsonPath("$.content[0].roadId").value("R07571"))
+        .andExpect(jsonPath("$.content[0].districts.length()").value(2));
   }
 
   @Test

@@ -61,7 +61,8 @@ class RoadServiceTest {
     RoadSearchResult road = search(new RoadSearchCriteria(null, "R08317", null, null, null))
         .content().get(0);
 
-    assertThat(road).isEqualTo(new RoadSearchResult("R08317", "I", "AM 4", "RP", true, "CANFOR"));
+    assertThat(road)
+        .isEqualTo(new RoadSearchResult("R08317", "I", "AM 4", "RP", true, List.of("DPG")));
   }
 
   @Test
@@ -83,8 +84,36 @@ class RoadServiceTest {
   void everyCriterionIsAPartialMatch() {
     assertThat(pairs(search(new RoadSearchCriteria(null, "0757", "a", null, null))))
         .containsExactly("R07571/AA");
-    assertThat(pairs(search(new RoadSearchCriteria(null, null, null, null, "fraser"))))
+    assertThat(pairs(search(new RoadSearchCriteria(null, "945", "0", null, null))))
         .containsExactly("9456/01");
+  }
+
+  @Test
+  void districtFindsEverySectionInIt() {
+    // Prince George (18): the two-district section too, by its row there.
+    assertThat(pairs(search(new RoadSearchCriteria(null, null, null, null, 18L))))
+        .containsExactly("R08317/I", "R07571/AA", "9456/01");
+    // Mackenzie (19): the two-district section only; CEDAR ROAD's 19 is its NEWGEOMETRY row.
+    PagedResponse<RoadSearchResult> mackenzie =
+        search(new RoadSearchCriteria(null, null, null, null, 19L));
+    assertThat(pairs(mackenzie)).containsExactly("R07571/AA");
+    assertThat(mackenzie.totalElements()).isEqualTo(1);
+    assertThat(search(new RoadSearchCriteria(null, null, null, null, 99L)).content()).isEmpty();
+  }
+
+  @Test
+  void listsEveryDistrictOfASection() {
+    // Found under one district, the section still lists both, alphabetically.
+    assertThat(search(new RoadSearchCriteria(null, "R07571", null, null, 19L)).content())
+        .extracting(RoadSearchResult::districts)
+        .containsExactly(List.of("DMH", "DPG"));
+    // An edit in progress: the NEWGEOMETRY row's district is not one of them.
+    assertThat(search(new RoadSearchCriteria(null, "9456", null, null, null)).content())
+        .extracting(RoadSearchResult::districts)
+        .containsExactly(List.of("DPG"));
+    assertThat(search(new RoadSearchCriteria(null, "R00001", null, null, null)).content())
+        .extracting(RoadSearchResult::districts)
+        .containsExactly(List.of());
   }
 
   @Test
@@ -130,6 +159,16 @@ class RoadServiceTest {
     // By the stored type, descending: SUP, RP-RETIRE, RP, OTH, FSR.
     assertThat(pairs(page)).containsExactly(
         "S00100/a 1", "R08317/I", "9456/01", "R00001/B", "R07571/AA");
+  }
+
+  @Test
+  void sortsByTheFirstDistrict() {
+    PagedResponse<RoadSearchResult> page = service.search(ANY, 0, 50,
+        List.of(new HeaderSort<>(RoadSortColumn.DISTRICT, Sort.Direction.ASC)));
+
+    // DMH (the two-district section, by its first), DPG twice by road name, DQC; none last.
+    assertThat(pairs(page)).containsExactly(
+        "R07571/AA", "R08317/I", "9456/01", "S00100/a 1", "R00001/B");
   }
 
   @Test
@@ -282,9 +321,11 @@ class RoadServiceTest {
         new RoadSectionKey("9999", "01"),
         new RoadSectionKey(null, "01")));
 
-    assertThat(found).extracting(r -> r.roadId() + "/" + r.sectionId() + "=" + r.roadName())
-        .containsExactlyInAnyOrder("R08317/I=AM 4", "R07571/AA=BIG CREEK FSR",
-            "S00100/a 1=100% DOWN_HILL");
+    assertThat(found).extracting(r -> r.roadId() + "/" + r.sectionId() + "=" + r.roadName()
+            + " " + r.tenureType() + (r.retired() ? " retired " : " ") + r.districts())
+        .containsExactlyInAnyOrder("R08317/I=AM 4 RP retired [DPG]",
+            "R07571/AA=BIG CREEK FSR FSR [DMH, DPG]",
+            "S00100/a 1=100% DOWN_HILL SUP [DQC]");
     assertThat(service.lookUp(List.of())).isEmpty();
   }
 

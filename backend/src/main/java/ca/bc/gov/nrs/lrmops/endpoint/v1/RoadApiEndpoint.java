@@ -45,8 +45,9 @@ public interface RoadApiEndpoint {
    */
   @Operation(summary = "Search road sections",
       description = "Every criterion is optional and a case-insensitive partial match, except"
-          + " tenureType, an exact code from /api/v1/road-tenure-types. One row"
-          + " per road and section. Retired roads are included, flagged retired. Needs scope"
+          + " tenureType, an exact code from /api/v1/road-tenure-types, and district, a Forest"
+          + " District's org unit number. One row per road and section, with the codes of every"
+          + " district it lies in. Retired roads are included, flagged retired. Needs scope"
           + " lrmops:roads:read.")
   @PreAuthorize(ApiScopes.ROADS_READ)
   @GetMapping
