@@ -11,5 +11,6 @@ public enum RoadSortColumn {
   ROAD_ID,
   SECTION_ID,
   TENURE_TYPE,
-  CLIENT_NAME
+  /** By the section's first district code, alphabetically. */
+  DISTRICT
 }

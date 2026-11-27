@@ -26,7 +26,7 @@ public interface TfmRoadRepository extends JpaRepository<TfmRoadEntity, Long> {
    *
    * <h2>One row per road and section</h2>
    * The table can hold several rows for a pair (see {@link TfmRoadEntity}), so the rows are
-   * grouped. Name, tenure type and client are taken with {@code MAX}: a pair's rows have never
+   * grouped. Name and tenure type are taken with {@code MAX}: a pair's rows have never
    * been seen to disagree on the name, and {@code MAX} picks one value the same way every time if
    * the others ever do.
    *
@@ -42,8 +42,12 @@ public interface TfmRoadRepository extends JpaRepository<TfmRoadEntity, Long> {
    * <h2>Null-guarded parameters</h2>
    * Each criterion is a {@code LIKE} pattern already upper-cased, escaped and wrapped in
    * {@code %} by the service, or null when not given. The name is compared with runs of spaces
-   * collapsed. There is no index on {@code ROAD_NAME} or {@code CLIENT_NAME}, so a search on
-   * either reads the whole table (about 300k rows).
+   * collapsed. There is no index on {@code ROAD_NAME}, so a search on it reads the whole table
+   * (about 300k rows). The district is a number matched exactly, after grouping: a pair is kept
+   * when any of its rows lies in the district, so a section crossing a boundary is found under
+   * either, and its other district still listed. The districts themselves are not selected here
+   * — a pair has a row per district — but read for the page afterwards
+   * ({@link #findSectionsOfRoads}).
    *
    * <h2>Ordered by the caller</h2>
    * The order comes on the {@code Pageable}, built by {@code RoadService}. It may name only the
@@ -51,15 +55,16 @@ public interface TfmRoadRepository extends JpaRepository<TfmRoadEntity, Long> {
    *
    * <h2>Counted from a derived table</h2>
    * The count is of distinct road and section pairs, which Oracle can't count with a
-   * multi-column {@code COUNT(DISTINCT …)}; it counts the same groups the search pages over.
+   * multi-column {@code COUNT(DISTINCT …)}; it counts the same groups the search pages over. The
+   * district is tested outside the derived table, on its count of rows in the district, as
+   * Hibernate cannot carry a {@code HAVING} into one.
    */
   @Query(value = """
       SELECT new ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchResult(
                road.roadId,
                road.sectionId,
                MAX(TRIM(road.roadName)),
-               MAX(TRIM(road.roadTenureType)),
-               MAX(TRIM(road.clientName)))
+               MAX(TRIM(road.roadTenureType)))
         FROM TfmRoadEntity road
        WHERE COALESCE(road.roadStatus, 'OLDGEOMETRY') = 'OLDGEOMETRY'
          AND road.roadId IS NOT NULL
@@ -70,15 +75,15 @@ public interface TfmRoadRepository extends JpaRepository<TfmRoadEntity, Long> {
          AND (:roadId IS NULL OR UPPER(road.roadId) LIKE :roadId ESCAPE '\\')
          AND (:sectionId IS NULL OR UPPER(road.sectionId) LIKE :sectionId ESCAPE '\\')
          AND (:tenureType IS NULL OR UPPER(TRIM(road.roadTenureType)) = :tenureType)
-         AND (:clientName IS NULL
-              OR UPPER(FUNCTION('REGEXP_REPLACE', TRIM(road.clientName), ' {2,}', ' '))
-                 LIKE :clientName ESCAPE '\\')
        GROUP BY road.roadId, road.sectionId
+      HAVING (:district IS NULL
+              OR SUM(CASE WHEN road.orgUnitNo = :district THEN 1 ELSE 0 END) > 0)
       """,
       countQuery = """
       SELECT COUNT(*)
         FROM (SELECT road.roadId AS roadId,
-                     road.sectionId AS sectionId
+                     road.sectionId AS sectionId,
+                     SUM(CASE WHEN road.orgUnitNo = :district THEN 1 ELSE 0 END) AS inDistrict
                 FROM TfmRoadEntity road
                WHERE COALESCE(road.roadStatus, 'OLDGEOMETRY') = 'OLDGEOMETRY'
                  AND road.roadId IS NOT NULL
@@ -89,18 +94,16 @@ public interface TfmRoadRepository extends JpaRepository<TfmRoadEntity, Long> {
                  AND (:roadId IS NULL OR UPPER(road.roadId) LIKE :roadId ESCAPE '\\')
                  AND (:sectionId IS NULL OR UPPER(road.sectionId) LIKE :sectionId ESCAPE '\\')
                  AND (:tenureType IS NULL OR UPPER(TRIM(road.roadTenureType)) = :tenureType)
-                 AND (:clientName IS NULL
-                      OR UPPER(FUNCTION('REGEXP_REPLACE', TRIM(road.clientName), ' {2,}', ' '))
-                         LIKE :clientName ESCAPE '\\')
                GROUP BY road.roadId, road.sectionId
              ) matched
+       WHERE :district IS NULL OR matched.inDistrict > 0
       """)
   Page<RoadSearchResult> search(
       @Param("roadName") String roadName,
       @Param("roadId") String roadId,
       @Param("sectionId") String sectionId,
       @Param("tenureType") String tenureType,
-      @Param("clientName") String clientName,
+      @Param("district") Long district,
       Pageable page);
 
   /**
@@ -172,8 +175,9 @@ public interface TfmRoadRepository extends JpaRepository<TfmRoadEntity, Long> {
   List<RoadSectionKey> findSectionsNamed(@Param("roadName") String roadName);
 
   /**
-   * Every section of the given roads, one row each, as {@link #search} returns them. The caller
-   * keeps the sections it asked for.
+   * Every section of the given roads, a row for each district it lies in (one, usually), as
+   * {@link #search} counts them. The caller keeps the sections it asked for and merges a section's
+   * rows.
    *
    * <p>By road id, so the index on {@code ROAD_ID} is used; a road has a handful of sections, so
    * the extra rows cost little. At most 1,000 ids: Oracle's limit on an {@code IN} list.
@@ -181,17 +185,17 @@ public interface TfmRoadRepository extends JpaRepository<TfmRoadEntity, Long> {
    * @param roadIds trimmed and upper-cased, as LRMOPS stores road ids
    */
   @Query("""
-      SELECT new ca.bc.gov.nrs.lrmops.struct.v1.RoadSearchResult(
+      SELECT new ca.bc.gov.nrs.lrmops.repository.v1.RoadSectionDistrictRow(
                road.roadId,
                road.sectionId,
                MAX(TRIM(road.roadName)),
                MAX(TRIM(road.roadTenureType)),
-               MAX(TRIM(road.clientName)))
+               TRIM(road.unitCode))
         FROM TfmRoadEntity road
        WHERE road.roadId IN :roadIds
          AND road.sectionId IS NOT NULL
          AND COALESCE(road.roadStatus, 'OLDGEOMETRY') = 'OLDGEOMETRY'
-       GROUP BY road.roadId, road.sectionId
+       GROUP BY road.roadId, road.sectionId, TRIM(road.unitCode)
       """)
-  List<RoadSearchResult> findSectionsOfRoads(@Param("roadIds") Collection<String> roadIds);
+  List<RoadSectionDistrictRow> findSectionsOfRoads(@Param("roadIds") Collection<String> roadIds);
 }
